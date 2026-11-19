@@ -14,6 +14,10 @@ android {
         versionName = "0.1.0"
     }
     buildFeatures { compose = true }
+    // Keep Java and Kotlin bytecode targets aligned for CI.
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
 }
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
