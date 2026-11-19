@@ -11,6 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Verify Telegram source checkout
+        run: |
+          test -f upstream/Telegram-Android/README.md
+          git submodule status
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -18,7 +24,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Build debug APK
+      - name: Build MaterialGram prototype APK
         run: gradle assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
