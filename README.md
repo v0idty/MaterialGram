@@ -1,33 +1,40 @@
 # MaterialGram
 
-A native Android Telegram client project. The project is currently at the Android foundation stage; Telegram networking, authentication, and chat features are **not implemented yet**.
+MaterialGram is an unofficial Android client project based on the open-source Telegram Android codebase. The real client source is pinned under `upstream/Telegram-Android`; the separate root `app/` module is only a small Compose UI prototype.
 
-## Stack
-- Kotlin
-- Jetpack Compose / Material 3
-- Android Gradle Plugin 8.7.3
-- Android SDK 35
+## Build the real Android client
 
-## Telegram upstream source
-Telegram Android is linked as a real Git submodule, pinned to a specific upstream revision. Clone with submodules:
+The **MaterialGram Telegram APK** workflow builds the actual upstream Android application (not the Compose prototype). Before running it, add these repository Actions secrets:
 
-```bash
-git clone --recurse-submodules https://github.com/v0idty/MaterialGram.git
-# If you already cloned it:
-git submodule update --init --recursive
-```
+- `TELEGRAM_API_ID` — your app ID from [my.telegram.org/apps](https://my.telegram.org/apps).
+- `TELEGRAM_API_HASH` — the matching API hash from the same page.
 
-The CI workflow checks out the submodule and verifies that its README exists, then builds the current Compose prototype APK. The prototype Gradle project does **not** compile the Telegram upstream code yet.
+Do not paste these values into chat, commit them, or place them in a source file. Add them in GitHub: **Settings → Secrets and variables → Actions → New repository secret**.
 
-## Roadmap
-- [x] Add Telegram Android source as a pinned submodule
-- [x] CI checks out and verifies upstream source
-- [ ] Integrate and audit upstream into the MaterialGram build
-- [ ] Establish Telegram API / MTProto client configuration
-- [ ] Authentication flow
-- [ ] Chat list and conversation UI
-- [x] Material 3 light/dark theme prototype
-- [ ] Client settings and additional features
+Then open **Actions → MaterialGram Telegram APK → Run workflow**. The workflow checks out the pinned Telegram source and its submodules, applies MaterialGram branding, and builds the `AfatDebug` APK. The artifact is named `MaterialGram-Android-debug`.
 
-## License
-Telegram Android upstream is GPL-2.0. Preserve upstream notices and publish required source modifications before distributing builds.
+Optional: add `MATERIALGRAM_GOOGLE_SERVICES_JSON_BASE64` containing your own base64-encoded Firebase `google-services.json` for Firebase push notifications. Without it, the APK can still be built, but Firebase push notifications are not configured. Google Maps credentials are also intentionally not copied from the upstream app.
+
+## Toolchain
+- Telegram Android upstream revision: `21f7d109da6ab3506c9e9577f98c6a38771ab335`
+- Java 17
+- Gradle 8.13 (upstream wrapper)
+- Android SDK 36
+- Android NDK 27.2.12479018
+- CMake 3.22.1
+
+## Repository layout
+- `upstream/Telegram-Android` — pinned Telegram Android source and its nested submodules.
+- `tools/prepare_materialgram_upstream.py` — reproducible, CI-only package/branding/API configuration.
+- `app/` — separate Compose UI prototype; it is not the Telegram client APK.
+
+## Status
+- [x] Pin Telegram Android source as a real Git submodule
+- [x] Add a reproducible MaterialGram branding/configuration step
+- [x] Add a workflow for building the real upstream Android app
+- [ ] Complete the first successful upstream APK build
+- [ ] Install and verify login, chat sync, calls, media, and notifications on a device
+- [ ] Continue adapting the UI to Material You
+
+## License and attribution
+Telegram Android upstream is GPL-2.0. Keep its copyright notices and license, and publish corresponding source modifications when distributing builds. MaterialGram is unofficial and is not affiliated with Telegram.
