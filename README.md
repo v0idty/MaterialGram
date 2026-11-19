@@ -9,10 +9,18 @@ A native Android Telegram client project. The project is currently at the Androi
 - Android SDK 35
 
 ## Build
-Use Android Studio with JDK 17, or run the GitHub Actions workflow to build a debug APK.
+The current Compose prototype is buildable separately. The Telegram upstream source is a submodule and must be initialized before working with it:
+
+\`\`\`bash
+git submodule update --init --recursive
+\`\`\`
+
+Open \`upstream/Telegram-Android\` separately in Android Studio and follow its upstream README for SDK/NDK and credential setup. This repository's simple Gradle project does not build the upstream Telegram source.
+
 
 ## Roadmap
-- [ ] Integrate and audit a properly licensed Telegram Android codebase
+- [x] Add upstream Telegram Android source as a submodule reference
+- [ ] Integrate and audit upstream into the MaterialGram build
 - [ ] Establish Telegram API / MTProto client configuration
 - [ ] Authentication flow
 - [ ] Chat list and conversation UI
