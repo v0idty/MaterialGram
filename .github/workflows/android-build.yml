@@ -15,6 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check MaterialGram build preparation script syntax
+        run: python3 -m py_compile tools/prepare_materialgram_upstream.py
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
