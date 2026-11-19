@@ -19,6 +19,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Apply MaterialGram branding and private API configuration
+        run: python3 tools/prepare_materialgram_upstream.py
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -30,15 +33,12 @@ jobs:
 
       - name: Install Telegram Android SDK and NDK requirements
         run: |
-          yes | sdkmanager --licenses >/dev/null
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager --install \
             "platforms;android-36" \
             "build-tools;36.0.0" \
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
-
-      - name: Apply MaterialGram branding and private API configuration
-        run: python3 tools/prepare_materialgram_upstream.py
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -46,6 +46,9 @@ jobs:
       - name: Build real Telegram Android client
         working-directory: upstream/Telegram-Android
         run: ./gradlew --no-daemon --stacktrace :TMessagesProj_App:assembleAfatDebug
+
+      - name: Verify APK exists
+        run: test -s upstream/Telegram-Android/TMessagesProj_App/build/outputs/apk/afat/debug/app.apk
 
       - name: Upload MaterialGram APK
         uses: actions/upload-artifact@v4
