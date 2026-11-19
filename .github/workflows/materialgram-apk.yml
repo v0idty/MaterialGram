@@ -1,0 +1,56 @@
+name: MaterialGram Telegram APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      MATERIALGRAM_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.MATERIALGRAM_GOOGLE_SERVICES_JSON_BASE64 }}
+    steps:
+      - name: Checkout MaterialGram and Telegram source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Telegram Android SDK and NDK requirements
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager --install \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.2.12479018" \
+            "cmake;3.22.1"
+
+      - name: Apply MaterialGram branding and private API configuration
+        run: python3 tools/prepare_materialgram_upstream.py
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build real Telegram Android client
+        working-directory: upstream/Telegram-Android
+        run: ./gradlew --no-daemon --stacktrace :TMessagesProj_App:assembleAfatDebug
+
+      - name: Upload MaterialGram APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MaterialGram-Android-debug
+          path: upstream/Telegram-Android/TMessagesProj_App/build/outputs/apk/afat/debug/app.apk
+          if-no-files-found: error
+          retention-days: 14
