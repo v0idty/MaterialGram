@@ -576,9 +576,17 @@ def main() -> None:
     <path
         android:fillColor="#10B574"
         android:pathData="M0,0H108V108H0Z" />
-    <path
-        android:fillColor="#F5FFFA"
-        android:pathData="M21,40C19,36 21,33 25,31L58,25C63,24 65,27 64,32L50,67C48,71 43,71 40,67C34,57 29,52 21,48C17,46 18,42 21,40Z" />
+    <group
+        android:pivotX="40.5"
+        android:pivotY="47.5"
+        android:scaleX="1.12"
+        android:scaleY="1.12"
+        android:translateX="13.5"
+        android:translateY="6.5">
+        <path
+            android:fillColor="#F5FFFA"
+            android:pathData="M21,40C19,36 21,33 25,31L58,25C63,24 65,27 64,32L50,67C48,71 43,71 40,67C34,57 29,52 21,48C17,46 18,42 21,40Z" />
+    </group>
 </vector>
 """
     write_text(icon_path, icon)
