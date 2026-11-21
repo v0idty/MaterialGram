@@ -415,26 +415,6 @@ public interface MainTabsActivityController {
     )
     main_tabs = replace_once(
         main_tabs,
-        "        final float factor = MaterialGramSettings.isBottomNavigationEnabled() ? animatorTabsVisible.getFloatValue() : 0f;\n"
-        "        final float scale = lerp(0.85f, 1f, factor);\n"
-        "\n"
-        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));\n"
-        "        tabsView.setClickable(factor > 1);\n"
-        "        tabsView.setEnabled(factor > 1);\n"
-        "        tabsView.setAlpha(factor);\n"
-        "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
-        "        // Keep the navigation reachable even when Telegram temporarily hides it for search/blur states.\n"
-        "        final float factor = MaterialGramSettings.isBottomNavigationEnabled() ? 1f : 0f;\n"
-        "\n"
-        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));\n"
-        "        tabsView.setClickable(factor > 0.5f);\n"
-        "        tabsView.setEnabled(factor > 0.5f);\n"
-        "        tabsView.setAlpha(factor);\n"
-        "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
-        "the recoverable compact tab layout"
-    )
-    main_tabs = replace_once(
-        main_tabs,
         "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
         "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n"
         "        tabsViewWrapper.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
@@ -453,39 +433,17 @@ public interface MainTabsActivityController {
         main_tabs,
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
         "    public void updateMaterialGramNavigation() {\n"
-        "        final boolean enabled = MaterialGramSettings.isBottomNavigationEnabled();\n"
-        "        final Runnable refresh = () -> {\n"
-        "            if (tabsView == null || tabsViewWrapper == null) {\n"
-        "                return;\n"
-        "            }\n"
-        "            animatorTabsVisible.setValue(enabled, false);\n"
-        "            animatorTabsScrollCollapsed.setValue(false, false);\n"
-        "            checkUi_callTabVisible(getUserConfig().showCallsTab, false);\n"
-        "            if (enabled && dialogsActivity != null) {\n"
-        "                dialogsActivity.resetMaterialGramTabsScrollVisibility();\n"
-        "            }\n"
-        "            tabsViewWrapper.setVisibility(enabled ? View.VISIBLE : View.GONE);\n"
-        "            tabsViewWrapper.setClickable(enabled);\n"
-        "            tabsView.setVisibility(enabled ? View.VISIBLE : View.GONE);\n"
-        "            tabsView.setAlpha(enabled ? 1f : 0f);\n"
-        "            tabsView.setEnabled(enabled);\n"
-        "            tabsView.setClickable(enabled);\n"
-        "            checkUi_tabsPosition();\n"
-        "            checkUi_fadeView();\n"
-        "            tabsViewWrapper.invalidate();\n"
-        "            tabsView.invalidate();\n"
-        "        };\n"
-        "        if (tabsViewWrapper != null && tabsViewWrapper.isAttachedToWindow()) {\n"
-        "            tabsViewWrapper.post(refresh);\n"
-        "        } else {\n"
-        "            refresh.run();\n"
+        "        if (tabsView == null || tabsViewWrapper == null || updateLayoutWrapper == null) {\n"
+        "            return;\n"
         "        }\n"
+        "        checkUi_callTabVisible(getUserConfig().showCallsTab, false);\n"
+        "        checkUi_tabsPosition();\n"
+        "        checkUi_fadeView();\n"
         "    }\n"
         "\n"
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
         "the MaterialGram navigation refresh method"
-    )
-    main_tabs = replace_once(
+    )    main_tabs = replace_once(
         main_tabs,
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n"
         "        @Override\n"
