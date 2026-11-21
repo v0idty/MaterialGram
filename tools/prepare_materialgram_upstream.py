@@ -424,13 +424,13 @@ public interface MainTabsActivityController {
         "        tabsView.setEnabled(factor > 1);\n"
         "        tabsView.setAlpha(factor);\n"
         "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
-        "        final float factor = MaterialGramSettings.isBottomNavigationEnabled() ? animatorTabsVisible.getFloatValue() : 0f;\n"
-        "        final float collapsed = animatorTabsScrollCollapsed.getFloatValue();\n"
+        "        // Keep the navigation reachable even when Telegram temporarily hides it for search/blur states.\n"
+        "        final float factor = MaterialGramSettings.isBottomNavigationEnabled() ? 1f : 0f;\n"
         "\n"
-        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor) + dp(15) * collapsed);\n"
+        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));\n"
         "        tabsView.setClickable(factor > 0.5f);\n"
         "        tabsView.setEnabled(factor > 0.5f);\n"
-        "        tabsView.setAlpha(factor * lerp(1f, 0.88f, collapsed));\n"
+        "        tabsView.setAlpha(factor);\n"
         "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
         "the recoverable compact tab layout"
     )
