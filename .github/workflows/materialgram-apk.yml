@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - 'fix/**'
     paths:
       - 'tools/prepare_materialgram_upstream.py'
       - '.github/workflows/materialgram-apk.yml'
