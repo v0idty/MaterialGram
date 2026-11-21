@@ -179,10 +179,9 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         if (layout == null) {
             return;
         }
-        for (BaseFragment fragment : layout.getFragmentStack()) {
-            if (fragment instanceof MainTabsActivity) {
-                ((MainTabsActivity) fragment).updateMaterialGramNavigation();
-            }
+        final MainTabsActivity mainTabs = layout.findFragment(MainTabsActivity.class);
+        if (mainTabs != null) {
+            mainTabs.updateMaterialGramNavigation();
         }
     }
 
@@ -454,18 +453,33 @@ public interface MainTabsActivityController {
         main_tabs,
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
         "    public void updateMaterialGramNavigation() {\n"
-        "        if (tabsView == null || tabsViewWrapper == null) {\n"
-        "            return;\n"
-        "        }\n"
         "        final boolean enabled = MaterialGramSettings.isBottomNavigationEnabled();\n"
-        "        animatorTabsVisible.setValue(enabled, true);\n"
-        "        animatorTabsScrollCollapsed.setValue(false, false);\n"
-        "        checkUi_callTabVisible(getUserConfig().showCallsTab, false);\n"
-        "        if (enabled && dialogsActivity != null) {\n"
-        "            dialogsActivity.resetMaterialGramTabsScrollVisibility();\n"
+        "        final Runnable refresh = () -> {\n"
+        "            if (tabsView == null || tabsViewWrapper == null) {\n"
+        "                return;\n"
+        "            }\n"
+        "            animatorTabsVisible.setValue(enabled, false);\n"
+        "            animatorTabsScrollCollapsed.setValue(false, false);\n"
+        "            checkUi_callTabVisible(getUserConfig().showCallsTab, false);\n"
+        "            if (enabled && dialogsActivity != null) {\n"
+        "                dialogsActivity.resetMaterialGramTabsScrollVisibility();\n"
+        "            }\n"
+        "            tabsViewWrapper.setVisibility(enabled ? View.VISIBLE : View.GONE);\n"
+        "            tabsViewWrapper.setClickable(enabled);\n"
+        "            tabsView.setVisibility(enabled ? View.VISIBLE : View.GONE);\n"
+        "            tabsView.setAlpha(enabled ? 1f : 0f);\n"
+        "            tabsView.setEnabled(enabled);\n"
+        "            tabsView.setClickable(enabled);\n"
+        "            checkUi_tabsPosition();\n"
+        "            checkUi_fadeView();\n"
+        "            tabsViewWrapper.invalidate();\n"
+        "            tabsView.invalidate();\n"
+        "        };\n"
+        "        if (tabsViewWrapper != null && tabsViewWrapper.isAttachedToWindow()) {\n"
+        "            tabsViewWrapper.post(refresh);\n"
+        "        } else {\n"
+        "            refresh.run();\n"
         "        }\n"
-        "        checkUi_tabsPosition();\n"
-        "        checkUi_fadeView();\n"
         "    }\n"
         "\n"
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
@@ -493,6 +507,12 @@ public interface MainTabsActivityController {
         "        }\n"
         "    }\n",
         "the independent scroll-collapse controller method"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "        updateLayout();\\n        checkUnreadCount(false);\\n        return contentView;\\n",
+        "        updateLayout();\\n        updateMaterialGramNavigation();\\n        checkUnreadCount(false);\\n        return contentView;\\n",
+        "initial MaterialGram navigation visibility synchronization"
     )
     write_text(main_tabs_path, main_tabs)
 
