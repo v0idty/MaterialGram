@@ -50,6 +50,430 @@ def set_java_value(content: str, field: str, value: str) -> str:
     return updated
 
 
+
+
+def replace_once(content: str, old: str, new: str, description: str) -> str:
+    count = content.count(old)
+    if count != 1:
+        fail(f"Could not safely patch {description}: expected one match, found {count}.")
+    return content.replace(old, new, 1)
+
+
+def patch_materialgram_features() -> None:
+    """Patch the pinned Telegram UI with MaterialGram's optional adaptive navigation."""
+    ui_root = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "ui"
+    messenger_root = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "messenger"
+
+    # Persist the user preference separately from Telegram's own settings.
+    settings_helper = ui_root / "MaterialGramSettings.java"
+    write_text(settings_helper, """package org.telegram.ui;
+
+import android.content.Context;
+import org.telegram.messenger.ApplicationLoader;
+
+/** Preferences owned by the MaterialGram fork. */
+public final class MaterialGramSettings {
+    private static final String PREFERENCES = "materialgram_settings";
+    private static final String KEY_BOTTOM_NAVIGATION = "bottom_navigation_enabled";
+
+    private MaterialGramSettings() {
+    }
+
+    public static boolean isBottomNavigationEnabled() {
+        final Context context = ApplicationLoader.applicationContext;
+        return context == null || context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                .getBoolean(KEY_BOTTOM_NAVIGATION, true);
+    }
+
+    public static void setBottomNavigationEnabled(boolean enabled) {
+        final Context context = ApplicationLoader.applicationContext;
+        if (context != null) {
+            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(KEY_BOTTOM_NAVIGATION, enabled)
+                    .apply();
+        }
+    }
+}
+""")
+
+    # A dedicated MaterialGram settings page with a real persistent switch.
+    settings_screen = ui_root / "MaterialGramSettingsActivity.java"
+    write_text(settings_screen, """package org.telegram.ui;
+
+import android.content.Context;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+
+import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.R;
+import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.INavigationLayout;
+import org.telegram.ui.Cells.HeaderCell;
+import org.telegram.ui.Cells.TextCheckCell;
+import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.RecyclerListView;
+
+public class MaterialGramSettingsActivity extends BaseFragment {
+    private static final int ROW_HEADER = 0;
+    private static final int ROW_NAVIGATION = 1;
+    private static final int ROW_INFO = 2;
+
+    private RecyclerListView listView;
+    private ListAdapter adapter;
+
+    @Override
+    protected boolean useSimpleActionBar() {
+        return true;
+    }
+
+    @Override
+    public View createView(Context context) {
+        setHasOwnBackground(true);
+        simpleActionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        simpleActionBar.setTitle(LocaleController.getString(R.string.MaterialGramSettings));
+        simpleActionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+            @Override
+            public void onItemClick(int id) {
+                if (id == -1) {
+                    finishFragment();
+                }
+            }
+        });
+
+        FrameLayout frameLayout = new FrameLayout(context);
+        fragmentView = frameLayout;
+
+        listView = new RecyclerListView(context);
+        listView.setSectionsDrawBackground(true);
+        listView.setSections();
+        listView.setLayoutManager(new LinearLayoutManager(context));
+        listView.setVerticalScrollBarEnabled(false);
+        listView.setAdapter(adapter = new ListAdapter(context));
+        listView.setOnItemClickListener((view, position) -> onRowClicked(position));
+        frameLayout.addView(listView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                LayoutHelper.MATCH_PARENT
+        ));
+        return fragmentView;
+    }
+
+    private void onRowClicked(int position) {
+        if (position != ROW_NAVIGATION) {
+            return;
+        }
+        MaterialGramSettings.setBottomNavigationEnabled(!MaterialGramSettings.isBottomNavigationEnabled());
+        adapter.notifyItemChanged(ROW_NAVIGATION);
+        updateMainTabs();
+    }
+
+    private void updateMainTabs() {
+        final INavigationLayout layout = getParentLayout();
+        if (layout == null) {
+            return;
+        }
+        for (BaseFragment fragment : layout.getFragmentStack()) {
+            if (fragment instanceof MainTabsActivity) {
+                ((MainTabsActivity) fragment).updateMaterialGramNavigation();
+            }
+        }
+    }
+
+    private class ListAdapter extends RecyclerListView.SelectionAdapter {
+        private final Context context;
+
+        private ListAdapter(Context context) {
+            this.context = context;
+        }
+
+        @Override
+        public int getItemCount() {
+            return 3;
+        }
+
+        @Override
+        public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            return holder.getAdapterPosition() == ROW_NAVIGATION;
+        }
+
+        @NonNull
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View view;
+            if (viewType == ROW_HEADER) {
+                view = new HeaderCell(context);
+            } else if (viewType == ROW_NAVIGATION) {
+                view = new TextCheckCell(context);
+            } else {
+                view = new TextInfoPrivacyCell(context);
+            }
+            view.setLayoutParams(new RecyclerView.LayoutParams(
+                    RecyclerView.LayoutParams.MATCH_PARENT,
+                    RecyclerView.LayoutParams.WRAP_CONTENT
+            ));
+            return new RecyclerListView.Holder(view);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+            if (position == ROW_HEADER) {
+                ((HeaderCell) holder.itemView).setText(
+                        LocaleController.getString(R.string.MaterialGramNavigationHeader)
+                );
+            } else if (position == ROW_NAVIGATION) {
+                ((TextCheckCell) holder.itemView).setTextAndCheck(
+                        LocaleController.getString(R.string.MaterialGramNavigationEnabled),
+                        MaterialGramSettings.isBottomNavigationEnabled(),
+                        false
+                );
+            } else {
+                ((TextInfoPrivacyCell) holder.itemView).setText(
+                        LocaleController.getString(R.string.MaterialGramNavigationInfo)
+                );
+            }
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return position;
+        }
+    }
+
+    @Override
+    protected RecyclerListView getListViewForSimpleGlass() {
+        return listView;
+    }
+
+    @Override
+    public boolean isSupportEdgeToEdge() {
+        return true;
+    }
+}
+""")
+
+    # Add MaterialGram's settings entry at the top of Telegram's Settings list.
+    settings_path = ui_root / "SettingsActivity.java"
+    settings = read_text(settings_path)
+    settings = replace_once(
+        settings,
+        "        items.add(UItem.asCustomShadow(topView, 200 - 12));\n",
+        "        items.add(UItem.asCustomShadow(topView, 200 - 12));\n"
+        "        items.add(SettingCell.Factory.of(28, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_features, getString(R.string.MaterialGramSettings), getString(R.string.MaterialGramSettingsInfo)));\n"
+        "        items.add(UItem.asShadow(null));\n",
+        "the top MaterialGram settings row"
+    )
+    settings = replace_once(
+        settings,
+        "            case 27: {\n                presentFragment(new HeaderSettingsActivity());\n                break;\n            }\n",
+        "            case 27: {\n                presentFragment(new HeaderSettingsActivity());\n                break;\n            }\n            case 28: {\n                presentSettingFragment(new MaterialGramSettingsActivity());\n                break;\n            }\n",
+        "the MaterialGram settings navigation action"
+    )
+    write_text(settings_path, settings)
+
+    # Telegram already implements the expanding selected capsule. Extend its
+    # native MainTabsActivity with a separate search button and the opt-in gate.
+    main_tabs_path = ui_root / "MainTabsActivity.java"
+    main_tabs = read_text(main_tabs_path)
+    main_tabs = replace_once(
+        main_tabs,
+        "import android.widget.FrameLayout;\n",
+        "import android.widget.FrameLayout;\nimport android.widget.ImageView;\n",
+        "the MainTabsActivity ImageView import"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "    private View fadeView;\n",
+        "    private View fadeView;\n"
+        "    private View materialGramSearchButton;\n",
+        "the MaterialGram search button field"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "        showAccountChangeHint();\n",
+        "        showAccountChangeHint();\n"
+        "        updateMaterialGramNavigation();\n",
+        "the MainTabsActivity resume refresh"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "            if (getUserConfig().showCallsTab) {\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putBoolean(\"needFinishFragment\", false);\n"
+        "                args.putBoolean(\"hasMainTabs\", true);\n"
+        "                return new CallLogActivity(args);\n"
+        "            }\n",
+        "            if (getUserConfig().showCallsTab && !MaterialGramSettings.isBottomNavigationEnabled()) {\n"
+        "                Bundle args = new Bundle();\n"
+        "                args.putBoolean(\"needFinishFragment\", false);\n"
+        "                args.putBoolean(\"hasMainTabs\", true);\n"
+        "                return new CallLogActivity(args);\n"
+        "            }\n",
+        "the Settings tab selection for MaterialGram navigation"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "        tabsViewBackground.setRadius(dp(DialogsActivity.MAIN_TABS_HEIGHT / 2f));\n"
+        "        tabsViewBackground.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));\n"
+        "        tabsView.setBackground(tabsViewBackground);\n",
+        "        tabsViewBackground.setRadius(dp(DialogsActivity.MAIN_TABS_HEIGHT / 2f));\n"
+        "        tabsViewBackground.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));\n"
+        "        tabsView.setBackground(tabsViewBackground);\n"
+        "\n"
+        "        FrameLayout searchButton = new FrameLayout(context);\n"
+        "        materialGramSearchButton = searchButton;\n"
+        "        searchButton.setContentDescription(getString(R.string.Search));\n"
+        "        ImageView searchIcon = new ImageView(context);\n"
+        "        searchIcon.setImageResource(R.drawable.outline_header_search);\n"
+        "        searchIcon.setColorFilter(getThemedColor(Theme.key_glass_tabUnselected));\n"
+        "        searchButton.addView(searchIcon, LayoutHelper.createFrame(24, 24, Gravity.CENTER));\n"
+        "        BlurredBackgroundDrawable searchButtonBackground = iBlur3FactoryGlass.create(searchButton, BlurredBackgroundProviderImpl.mainTabs(resourceProvider));\n"
+        "        searchButtonBackground.setRadius(dp(22));\n"
+        "        searchButton.setBackground(searchButtonBackground);\n"
+        "        searchButton.setOnClickListener(v -> {\n"
+        "            if (dialogsActivity == null) {\n"
+        "                prepareDialogsActivity(null);\n"
+        "            }\n"
+        "            selectTab(POSITION_CHATS, true);\n"
+        "            viewPager.scrollToPosition(POSITION_CHATS);\n"
+        "            if (dialogsActivity != null) {\n"
+        "                dialogsActivity.search(\"\", true);\n"
+        "            }\n"
+        "        });\n",
+        "the MaterialGram search button construction"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "        tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));\n"
+        "        tabsViewWrapper.setClipToPadding(false);\n"
+        "        contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));\n",
+        "        tabsViewWrapper.addView(tabsView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.LEFT, 8, 0, 60, 0));\n"
+        "        tabsViewWrapper.addView(searchButton, LayoutHelper.createFrame(44, 44, Gravity.RIGHT | Gravity.CENTER_VERTICAL, 0, 0, 8, 0));\n"
+        "        tabsViewWrapper.setClipToPadding(false);\n"
+        "        contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));\n",
+        "the MainTabsActivity capsule and search-button layout"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "        float alpha = (1f - isProfile * hide) * animatorTabsVisible.getFloatValue();\n",
+        "        float alpha = MaterialGramSettings.isBottomNavigationEnabled() ? (1f - isProfile * hide) * animatorTabsVisible.getFloatValue() : 0f;\n",
+        "the optional navigation fade"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "        final float factor = animatorTabsVisible.getFloatValue();\n",
+        "        final float factor = MaterialGramSettings.isBottomNavigationEnabled() ? animatorTabsVisible.getFloatValue() : 0f;\n",
+        "the optional navigation visibility factor"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
+        "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n"
+        "        tabsViewWrapper.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
+        "the navigation wrapper visibility"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "            tabsView.setViewVisible(tabs[INDEX_SETTINGS], !callTabsVisible, animated);\n"
+        "            tabsView.setViewVisible(tabs[INDEX_CALLS], callTabsVisible, animated);\n",
+        "            final boolean showCalls = callTabsVisible && !MaterialGramSettings.isBottomNavigationEnabled();\n"
+        "            tabsView.setViewVisible(tabs[INDEX_SETTINGS], !showCalls, animated);\n"
+        "            tabsView.setViewVisible(tabs[INDEX_CALLS], showCalls, animated);\n",
+        "the MaterialGram Settings tab visibility"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
+        "    public void updateMaterialGramNavigation() {\n"
+        "        if (tabsView == null || tabsViewWrapper == null) {\n"
+        "            return;\n"
+        "        }\n"
+        "        final boolean enabled = MaterialGramSettings.isBottomNavigationEnabled();\n"
+        "        animatorTabsVisible.setValue(enabled, true);\n"
+        "        checkUi_callTabVisible(getUserConfig().showCallsTab, false);\n"
+        "        if (enabled && dialogsActivity != null) {\n"
+        "            dialogsActivity.resetMaterialGramTabsScrollVisibility();\n"
+        "        }\n"
+        "        checkUi_tabsPosition();\n"
+        "        checkUi_fadeView();\n"
+        "    }\n"
+        "\n"
+        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
+        "the MaterialGram navigation refresh method"
+    )
+    write_text(main_tabs_path, main_tabs)
+
+    # Make the native chat-list scroll listener hide/reveal the capsule by direction.
+    dialogs_path = ui_root / "DialogsActivity.java"
+    dialogs = read_text(dialogs_path)
+    dialogs = replace_once(
+        dialogs,
+        "    private MainTabsActivityController mainTabsActivityController;\n",
+        "    private MainTabsActivityController mainTabsActivityController;\n"
+        "    private boolean materialGramTabsScrollVisible = true;\n",
+        "the chat-list navigation scroll state"
+    )
+    dialogs = replace_once(
+        dialogs,
+        "    public void setMainTabsActivityController(MainTabsActivityController controller) {\n"
+        "        mainTabsActivityController = controller;\n"
+        "    }\n",
+        "    public void setMainTabsActivityController(MainTabsActivityController controller) {\n"
+        "        mainTabsActivityController = controller;\n"
+        "    }\n"
+        "\n"
+        "    public void resetMaterialGramTabsScrollVisibility() {\n"
+        "        materialGramTabsScrollVisible = true;\n"
+        "        checkUi_mainTabsVisible();\n"
+        "    }\n",
+        "the chat-list navigation visibility reset"
+    )
+    dialogs = replace_once(
+        dialogs,
+        "                    viewPage.dialogsItemAnimator.onListScroll(-dy);\n",
+        "                    viewPage.dialogsItemAnimator.onListScroll(-dy);\n"
+        "                    if (dy != 0 && viewPages != null && viewPages.length > 0 && recyclerView == viewPages[0].listView && viewPage.dialogsType == DIALOGS_TYPE_DEFAULT && !searching) {\n"
+        "                        final boolean shouldShowTabs = dy < 0;\n"
+        "                        if (materialGramTabsScrollVisible != shouldShowTabs) {\n"
+        "                            materialGramTabsScrollVisible = shouldShowTabs;\n"
+        "                            checkUi_mainTabsVisible();\n"
+        "                        }\n"
+        "                    }\n",
+        "the chat-list scroll direction handler"
+    )
+    dialogs = replace_once(
+        dialogs,
+        "        final boolean mainTabsVisible = !searching && (blurredView == null || blurredView.getBackground() == null || blurredView.getAlpha() < 0.01f || blurredView.getVisibility() == View.GONE);\n",
+        "        final boolean mainTabsVisible = materialGramTabsScrollVisible && !searching && (blurredView == null || blurredView.getBackground() == null || blurredView.getAlpha() < 0.01f || blurredView.getVisibility() == View.GONE);\n",
+        "the chat-list driven tab visibility condition"
+    )
+    write_text(dialogs_path, dialogs)
+
+    # Add Russian base resources; localized resource folders fall back to values/.
+    strings_path = UPSTREAM / "TMessagesProj" / "src" / "main" / "res" / "values" / "strings.xml"
+    strings = read_text(strings_path)
+    additions = [
+        ('MaterialGramSettings', 'Настройки MaterialGram'),
+        ('MaterialGramSettingsInfo', 'Дополнительные настройки интерфейса MaterialGram'),
+        ('MaterialGramNavigationHeader', 'Нижняя панель навигации'),
+        ('MaterialGramNavigationEnabled', 'Включить панель MaterialGram'),
+        ('MaterialGramNavigationInfo', 'Плавающая панель с активной капсулой. Она скрывается при прокрутке чатов вниз и появляется при прокрутке вверх.'),
+    ]
+    for name, value in additions:
+        if f'name="{name}"' not in strings:
+            entry = f'    <string name="{name}">{value}</string>\n'
+            strings = replace_once(strings, "</resources>", entry + "</resources>", f"the {name} string resource")
+    write_text(strings_path, strings)
+
+    print("MaterialGram adaptive navigation and its settings screen were applied.")
+
+
 def main() -> None:
     if not UPSTREAM.is_dir():
         fail("Telegram submodule is not checked out. Use actions/checkout with submodules: recursive.")
@@ -181,6 +605,8 @@ def main() -> None:
             "", manifest
         )
         write_text(manifest_path, manifest)
+
+    patch_materialgram_features()
 
     print("MaterialGram branding and package ID applied.")
     print("Telegram API credentials injected into the temporary build checkout (values hidden).")
