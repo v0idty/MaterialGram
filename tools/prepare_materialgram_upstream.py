@@ -432,10 +432,10 @@ public interface MainTabsActivityController {
         main_tabs,
         "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));\n",
         "        final float collapsedFactor = animatorTabsScrollCollapsed.getFloatValue();\n"
-        "        final float scale = lerp(1f, 0.9f, collapsedFactor);\n"
+        "        final float collapsedScale = lerp(1f, 0.9f, collapsedFactor);\n"
         "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor) + dp(24) * collapsedFactor);\n"
-        "        tabsView.setScaleX(scale);\n"
-        "        tabsView.setScaleY(scale);\n",
+        "        tabsView.setScaleX(collapsedScale);\n"
+        "        tabsView.setScaleY(collapsedScale);\n",
         "the scroll-collapse visual transform"
     )
     main_tabs = replace_once(
