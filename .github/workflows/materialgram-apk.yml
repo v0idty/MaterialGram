@@ -2,6 +2,12 @@ name: MaterialGram Telegram APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tools/prepare_materialgram_upstream.py'
+      - '.github/workflows/materialgram-apk.yml'
 
 permissions:
   contents: read
