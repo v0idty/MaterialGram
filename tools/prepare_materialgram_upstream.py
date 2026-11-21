@@ -422,6 +422,24 @@ public interface MainTabsActivityController {
     )
     main_tabs = replace_once(
         main_tabs,
+        "        tabsView.setClickable(factor > 1);\n"
+        "        tabsView.setEnabled(factor > 1);\n",
+        "        tabsView.setClickable(factor > 0.5f);\n"
+        "        tabsView.setEnabled(factor > 0.5f);\n",
+        "the navigation interaction threshold"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));\n",
+        "        final float collapsedFactor = animatorTabsScrollCollapsed.getFloatValue();\n"
+        "        final float scale = lerp(1f, 0.9f, collapsedFactor);\n"
+        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor) + dp(24) * collapsedFactor);\n"
+        "        tabsView.setScaleX(scale);\n"
+        "        tabsView.setScaleY(scale);\n",
+        "the scroll-collapse visual transform"
+    )
+    main_tabs = replace_once(
+        main_tabs,
         "            tabsView.setViewVisible(tabs[INDEX_SETTINGS], !callTabsVisible, animated);\n"
         "            tabsView.setViewVisible(tabs[INDEX_CALLS], callTabsVisible, animated);\n",
         "            final boolean showCalls = callTabsVisible && !MaterialGramSettings.isBottomNavigationEnabled();\n"
