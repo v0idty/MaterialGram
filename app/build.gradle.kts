@@ -7,7 +7,7 @@ android {
     namespace = "org.materialgram"
     compileSdk = 35
     defaultConfig {
-        applicationId = "org.materialgram"
+        applicationId = "org.materialgram.preview"
         minSdk = 23
         targetSdk = 35
         versionCode = 1
