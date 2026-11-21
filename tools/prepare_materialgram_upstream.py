@@ -259,6 +259,15 @@ public class MaterialGramSettingsActivity extends BaseFragment {
 """)
 
     # Add MaterialGram's settings entry at the top of Telegram's Settings list.
+    controller_path = ui_root / "MainTabsActivityController.java"
+    write_text(controller_path, """package org.telegram.ui;
+
+public interface MainTabsActivityController {
+    void setTabsVisible(boolean visible);
+    void setTabsScrollCollapsed(boolean collapsed);
+}
+""")
+
     settings_path = ui_root / "SettingsActivity.java"
     settings = read_text(settings_path)
     settings = replace_once(
@@ -283,6 +292,31 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     main_tabs = read_text(main_tabs_path)
     main_tabs = replace_once(
         main_tabs,
+        "    private static final int ANIMATOR_ID_TABS_VISIBLE = 0;\n"
+        "    private final BoolAnimator animatorTabsVisible = new BoolAnimator(ANIMATOR_ID_TABS_VISIBLE,\n"
+        "        this, CubicBezierInterpolator.EASE_OUT_QUINT, 380, true);\n",
+        "    private static final int ANIMATOR_ID_TABS_VISIBLE = 0;\n"
+        "    private static final int ANIMATOR_ID_TABS_SCROLL_COLLAPSED = 1;\n"
+        "    private final BoolAnimator animatorTabsVisible = new BoolAnimator(ANIMATOR_ID_TABS_VISIBLE,\n"
+        "        this, CubicBezierInterpolator.EASE_OUT_QUINT, 380, true);\n"
+        "    private final BoolAnimator animatorTabsScrollCollapsed = new BoolAnimator(ANIMATOR_ID_TABS_SCROLL_COLLAPSED,\n"
+        "        this, CubicBezierInterpolator.EASE_OUT_QUINT, 240, false);\n",
+        "the separate scroll-collapse animator"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        "        if (id == ANIMATOR_ID_TABS_VISIBLE) {\n"
+        "            checkUi_tabsPosition();\n"
+        "            checkUi_fadeView();\n"
+        "        }\n",
+        "        if (id == ANIMATOR_ID_TABS_VISIBLE || id == ANIMATOR_ID_TABS_SCROLL_COLLAPSED) {\n"
+        "            checkUi_tabsPosition();\n"
+        "            checkUi_fadeView();\n"
+        "        }\n",
+        "the scroll-collapse animation callback"
+    )
+    main_tabs = replace_once(
+        main_tabs,
         "import android.widget.FrameLayout;\n",
         "import android.widget.FrameLayout;\nimport android.widget.ImageView;\n",
         "the MainTabsActivity ImageView import"
@@ -296,7 +330,16 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     )
     main_tabs = replace_once(
         main_tabs,
-        "        showAccountChangeHint();\n",
+        "        showAccountChangeHint();\n",    main_tabs = replace_once(
+        main_tabs,
+        "    public void selectTab(int position, boolean animated) {\n"
+        "        for (int a = 0; a < tabs.length; a++) {\n",
+        "    public void selectTab(int position, boolean animated) {\n"
+        "        animatorTabsScrollCollapsed.setValue(false, animated);\n"
+        "        for (int a = 0; a < tabs.length; a++) {\n",
+        "the tab selection recovery"
+    )
+
         "        showAccountChangeHint();\n"
         "        updateMaterialGramNavigation();\n",
         "the MainTabsActivity resume refresh"
@@ -373,6 +416,26 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     )
     main_tabs = replace_once(
         main_tabs,
+        "        final float factor = MaterialGramSettings.isBottomNavigationEnabled() ? animatorTabsVisible.getFloatValue() : 0f;\n"
+        "        final float scale = lerp(0.85f, 1f, factor);\n"
+        "\n"
+        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));\n"
+        "        tabsView.setClickable(factor > 1);\n"
+        "        tabsView.setEnabled(factor > 1);\n"
+        "        tabsView.setAlpha(factor);\n"
+        "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
+        "        final float factor = MaterialGramSettings.isBottomNavigationEnabled() ? animatorTabsVisible.getFloatValue() : 0f;\n"
+        "        final float collapsed = animatorTabsScrollCollapsed.getFloatValue();\n"
+        "\n"
+        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor) + dp(15) * collapsed);\n"
+        "        tabsView.setClickable(factor > 0.5f);\n"
+        "        tabsView.setEnabled(factor > 0.5f);\n"
+        "        tabsView.setAlpha(factor * lerp(1f, 0.88f, collapsed));\n"
+        "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
+        "the recoverable compact tab layout"
+    )
+    main_tabs = replace_once(
+        main_tabs,
         "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
         "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n"
         "        tabsViewWrapper.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
@@ -389,13 +452,37 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     )
     main_tabs = replace_once(
         main_tabs,
-        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
+        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",    main_tabs = replace_once(
+        main_tabs,
+        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n"
+        "        @Override\n"
+        "        public void setTabsVisible(boolean visible) {\n"
+        "            animatorTabsVisible.setValue(visible, true);\n"
+        "        }\n"
+        "    }\n",
+        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n"
+        "        @Override\n"
+        "        public void setTabsVisible(boolean visible) {\n"
+        "            animatorTabsVisible.setValue(visible, true);\n"
+        "        }\n"
+        "\n"
+        "        @Override\n"
+        "        public void setTabsScrollCollapsed(boolean collapsed) {\n"
+        "            if (MaterialGramSettings.isBottomNavigationEnabled()) {\n"
+        "                animatorTabsScrollCollapsed.setValue(collapsed, true);\n"
+        "            }\n"
+        "        }\n"
+        "    }\n",
+        "the independent scroll-collapse controller method"
+    )
+
         "    public void updateMaterialGramNavigation() {\n"
         "        if (tabsView == null || tabsViewWrapper == null) {\n"
         "            return;\n"
         "        }\n"
         "        final boolean enabled = MaterialGramSettings.isBottomNavigationEnabled();\n"
         "        animatorTabsVisible.setValue(enabled, true);\n"
+        "        animatorTabsScrollCollapsed.setValue(false, false);\n"
         "        checkUi_callTabVisible(getUserConfig().showCallsTab, false);\n"
         "        if (enabled && dialogsActivity != null) {\n"
         "            dialogsActivity.resetMaterialGramTabsScrollVisibility();\n"
@@ -414,9 +501,20 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     dialogs = read_text(dialogs_path)
     dialogs = replace_once(
         dialogs,
+        "    private MainTabsActivityController mainTabsActivityController;\n",    dialogs = replace_once(
+        dialogs,
+        "    public void onBecomeFullyVisible() {\n"
+        "        super.onBecomeFullyVisible();\n",
+        "    public void onBecomeFullyVisible() {\n"
+        "        super.onBecomeFullyVisible();\n"
+        "        if (mainTabsActivityController != null) {\n"
+        "            mainTabsActivityController.setTabsScrollCollapsed(false);\n"
+        "            checkUi_mainTabsVisible();\n"
+        "        }\n",
+        "the chat screen navigation restore"
+    )
+
         "    private MainTabsActivityController mainTabsActivityController;\n",
-        "    private MainTabsActivityController mainTabsActivityController;\n"
-        "    private boolean materialGramTabsScrollVisible = true;\n",
         "the chat-list navigation scroll state"
     )
     dialogs = replace_once(
@@ -429,7 +527,9 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         "    }\n"
         "\n"
         "    public void resetMaterialGramTabsScrollVisibility() {\n"
-        "        materialGramTabsScrollVisible = true;\n"
+        "        if (mainTabsActivityController != null) {\n"
+        "            mainTabsActivityController.setTabsScrollCollapsed(false);\n"
+        "        }\n"
         "        checkUi_mainTabsVisible();\n"
         "    }\n",
         "the chat-list navigation visibility reset"
@@ -438,19 +538,15 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         dialogs,
         "                    viewPage.dialogsItemAnimator.onListScroll(-dy);\n",
         "                    viewPage.dialogsItemAnimator.onListScroll(-dy);\n"
-        "                    if (dy != 0 && viewPages != null && viewPages.length > 0 && recyclerView == viewPages[0].listView && viewPage.dialogsType == DIALOGS_TYPE_DEFAULT && !searching) {\n"
-        "                        final boolean shouldShowTabs = dy < 0;\n"
-        "                        if (materialGramTabsScrollVisible != shouldShowTabs) {\n"
-        "                            materialGramTabsScrollVisible = shouldShowTabs;\n"
-        "                            checkUi_mainTabsVisible();\n"
-        "                        }\n"
+        "                    if (dy != 0 && mainTabsActivityController != null && viewPages != null && viewPages.length > 0 && recyclerView == viewPages[0].listView && viewPage.dialogsType == DIALOGS_TYPE_DEFAULT && !searching) {\n"
+        "                        mainTabsActivityController.setTabsScrollCollapsed(dy > 0);\n"
         "                    }\n",
         "the chat-list scroll direction handler"
     )
     dialogs = replace_once(
         dialogs,
         "        final boolean mainTabsVisible = !searching && (blurredView == null || blurredView.getBackground() == null || blurredView.getAlpha() < 0.01f || blurredView.getVisibility() == View.GONE);\n",
-        "        final boolean mainTabsVisible = materialGramTabsScrollVisible && !searching && (blurredView == null || blurredView.getBackground() == null || blurredView.getAlpha() < 0.01f || blurredView.getVisibility() == View.GONE);\n",
+        "        final boolean mainTabsVisible = !searching && (blurredView == null || blurredView.getBackground() == null || blurredView.getAlpha() < 0.01f || blurredView.getVisibility() == View.GONE);\n",
         "the chat-list driven tab visibility condition"
     )
     write_text(dialogs_path, dialogs)
@@ -463,7 +559,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         ('MaterialGramSettingsInfo', 'Дополнительные настройки интерфейса MaterialGram'),
         ('MaterialGramNavigationHeader', 'Нижняя панель навигации'),
         ('MaterialGramNavigationEnabled', 'Включить панель MaterialGram'),
-        ('MaterialGramNavigationInfo', 'Плавающая панель с активной капсулой. Она скрывается при прокрутке чатов вниз и появляется при прокрутке вверх.'),
+        ('MaterialGramNavigationInfo', 'Плавающая панель с активной капсулой. При прокрутке чатов вниз она компактно смещается, оставаясь доступной; при прокрутке вверх возвращается.'),
     ]
     for name, value in additions:
         if f'name="{name}"' not in strings:
@@ -576,17 +672,9 @@ def main() -> None:
     <path
         android:fillColor="#10B574"
         android:pathData="M0,0H108V108H0Z" />
-    <group
-        android:pivotX="40.5"
-        android:pivotY="47.5"
-        android:scaleX="1.12"
-        android:scaleY="1.12"
-        android:translateX="13.5"
-        android:translateY="6.5">
-        <path
-            android:fillColor="#F5FFFA"
-            android:pathData="M21,40C19,36 21,33 25,31L58,25C63,24 65,27 64,32L50,67C48,71 43,71 40,67C34,57 29,52 21,48C17,46 18,42 21,40Z" />
-    </group>
+    <path
+        android:fillColor="#F5FFFA"
+        android:pathData="M18.4,47.3L84.1,19.6C88.3,17.9 92.1,21.7 90.4,25.9L63.2,89.5C61.4,93.7 55.4,94 53.2,89.9L41.4,68.4L20.2,56.8C16.1,54.6 14.2,49.1 18.4,47.3Z" />
 </vector>
 """
     write_text(icon_path, icon)
