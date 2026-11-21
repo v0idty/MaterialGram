@@ -330,8 +330,6 @@ public interface MainTabsActivityController {
     )
     main_tabs = replace_once(
         main_tabs,
-        "        showAccountChangeHint();\n",    main_tabs = replace_once(
-        main_tabs,
         "    public void selectTab(int position, boolean animated) {\n"
         "        for (int a = 0; a < tabs.length; a++) {\n",
         "    public void selectTab(int position, boolean animated) {\n"
@@ -339,7 +337,9 @@ public interface MainTabsActivityController {
         "        for (int a = 0; a < tabs.length; a++) {\n",
         "the tab selection recovery"
     )
-
+    main_tabs = replace_once(
+        main_tabs,
+        "        showAccountChangeHint();\n",
         "        showAccountChangeHint();\n"
         "        updateMaterialGramNavigation();\n",
         "the MainTabsActivity resume refresh"
