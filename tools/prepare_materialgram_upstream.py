@@ -503,6 +503,12 @@ def main() -> None:
     if suffix_count != 1 and 'applicationIdSuffix ".beta"' in app_gradle:
         fail("Could not remove the upstream .beta applicationId suffix safely.")
 
+    # Keep the same signer for every MaterialGram APK so updates install in place.
+    stable_keystore = 'storeFile file("../TMessagesProj/config/release.keystore")'
+    stable_debug_signer = "signingConfig signingConfigs.debug"
+    if stable_keystore not in app_gradle or stable_debug_signer not in app_gradle:
+        fail("The pinned Telegram build no longer uses MaterialGram's stable signing configuration.")
+
     firebase_b64 = os.environ.get("MATERIALGRAM_GOOGLE_SERVICES_JSON_BASE64", "").strip()
     firebase_config_path = UPSTREAM / "TMessagesProj_App" / "google-services.json"
     upstream_firebase_path = UPSTREAM / "TMessagesProj" / "google-services.json"
@@ -568,14 +574,11 @@ def main() -> None:
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#6750A4"
-        android:pathData="M12,0H96A12,12 0,0 1,108 12V96A12,12 0,0 1,96 108H12A12,12 0,0 1,0 96V12A12,12 0,0 1,12 0Z" />
+        android:fillColor="#10B574"
+        android:pathData="M0,0H108V108H0Z" />
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M54,18C35,18 20,31 20,48C20,65 34,78 52,78H63L78,91V75C85,69 89,60 89,48C89,31 74,18 54,18Z" />
-    <path
-        android:fillColor="#6750A4"
-        android:pathData="M37,41H44L54,52L64,41H71V68H64V51L54,62L44,51V68H37Z" />
+        android:fillColor="#F5FFFA"
+        android:pathData="M21,40C19,36 21,33 25,31L58,25C63,24 65,27 64,32L50,67C48,71 43,71 40,67C34,57 29,52 21,48C17,46 18,42 21,40Z" />
 </vector>
 """
     write_text(icon_path, icon)
