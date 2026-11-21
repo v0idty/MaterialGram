@@ -511,7 +511,7 @@ public interface MainTabsActivityController {
     main_tabs = replace_once(
         main_tabs,
         "        updateLayout();\n        checkUnreadCount(false);\n        return contentView;\n",
-        "        updateLayout();\\n        updateMaterialGramNavigation();\\n        checkUnreadCount(false);\\n        return contentView;\\n",
+        "        updateLayout();\n        updateMaterialGramNavigation();\n        checkUnreadCount(false);\n        return contentView;\n",
         "initial MaterialGram navigation visibility synchronization"
     )
     write_text(main_tabs_path, main_tabs)
