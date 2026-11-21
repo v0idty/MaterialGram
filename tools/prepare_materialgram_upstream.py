@@ -443,7 +443,8 @@ public interface MainTabsActivityController {
         "\n"
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
         "the MaterialGram navigation refresh method"
-    )    main_tabs = replace_once(
+    )
+    main_tabs = replace_once(
         main_tabs,
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n"
         "        @Override\n"
