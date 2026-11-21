@@ -452,7 +452,26 @@ public interface MainTabsActivityController {
     )
     main_tabs = replace_once(
         main_tabs,
-        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",    main_tabs = replace_once(
+        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
+        "    public void updateMaterialGramNavigation() {\n"
+        "        if (tabsView == null || tabsViewWrapper == null) {\n"
+        "            return;\n"
+        "        }\n"
+        "        final boolean enabled = MaterialGramSettings.isBottomNavigationEnabled();\n"
+        "        animatorTabsVisible.setValue(enabled, true);\n"
+        "        animatorTabsScrollCollapsed.setValue(false, false);\n"
+        "        checkUi_callTabVisible(getUserConfig().showCallsTab, false);\n"
+        "        if (enabled && dialogsActivity != null) {\n"
+        "            dialogsActivity.resetMaterialGramTabsScrollVisibility();\n"
+        "        }\n"
+        "        checkUi_tabsPosition();\n"
+        "        checkUi_fadeView();\n"
+        "    }\n"
+        "\n"
+        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
+        "the MaterialGram navigation refresh method"
+    )
+    main_tabs = replace_once(
         main_tabs,
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n"
         "        @Override\n"
@@ -475,33 +494,12 @@ public interface MainTabsActivityController {
         "    }\n",
         "the independent scroll-collapse controller method"
     )
-
-        "    public void updateMaterialGramNavigation() {\n"
-        "        if (tabsView == null || tabsViewWrapper == null) {\n"
-        "            return;\n"
-        "        }\n"
-        "        final boolean enabled = MaterialGramSettings.isBottomNavigationEnabled();\n"
-        "        animatorTabsVisible.setValue(enabled, true);\n"
-        "        animatorTabsScrollCollapsed.setValue(false, false);\n"
-        "        checkUi_callTabVisible(getUserConfig().showCallsTab, false);\n"
-        "        if (enabled && dialogsActivity != null) {\n"
-        "            dialogsActivity.resetMaterialGramTabsScrollVisibility();\n"
-        "        }\n"
-        "        checkUi_tabsPosition();\n"
-        "        checkUi_fadeView();\n"
-        "    }\n"
-        "\n"
-        "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
-        "the MaterialGram navigation refresh method"
-    )
     write_text(main_tabs_path, main_tabs)
 
     # Make the native chat-list scroll listener hide/reveal the capsule by direction.
     dialogs_path = ui_root / "DialogsActivity.java"
     dialogs = read_text(dialogs_path)
     dialogs = replace_once(
-        dialogs,
-        "    private MainTabsActivityController mainTabsActivityController;\n",    dialogs = replace_once(
         dialogs,
         "    public void onBecomeFullyVisible() {\n"
         "        super.onBecomeFullyVisible();\n",
@@ -512,10 +510,6 @@ public interface MainTabsActivityController {
         "            checkUi_mainTabsVisible();\n"
         "        }\n",
         "the chat screen navigation restore"
-    )
-
-        "    private MainTabsActivityController mainTabsActivityController;\n",
-        "the chat-list navigation scroll state"
     )
     dialogs = replace_once(
         dialogs,
