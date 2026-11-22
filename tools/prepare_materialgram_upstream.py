@@ -12,14 +12,13 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import NoReturn
 
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM = ROOT / "upstream" / "Telegram-Android"
 PACKAGE = "org.materialgram"
 
 
-def fail(message: str) -> NoReturn:
+def fail(message: str) -> "NoReturn":
     print(f"ERROR: {message}", file=sys.stderr)
     raise SystemExit(1)
 
@@ -52,14 +51,10 @@ def set_java_value(content: str, field: str, value: str) -> str:
 
 
 def replace_once(content: str, old: str, new: str, description: str) -> str:
-    # Check the replacement first: many patches retain the old text inside the
-    # inserted block, so checking old before new would duplicate patches.
-    if content.count(new) == 1:
-        return content
     count = content.count(old)
-    if count == 1:
-        return content.replace(old, new, 1)
-    fail(f"Could not safely patch {description}: expected one original match, found {count}.")
+    if count != 1:
+        fail(f"Could not safely patch {description}: expected one match, found {count}.")
+    return content.replace(old, new, 1)
 
 
 def patch_materialgram_features() -> None:
@@ -83,6 +78,7 @@ public final class MaterialGramSettings {
     private static final String PREFERENCES = "materialgram_settings";
     private static final String KEY_BOTTOM_NAVIGATION = "bottom_navigation_enabled";
     private static final String KEY_AVATAR_SHAPE = "avatar_shape";
+    private static final String KEY_MATERIAL_INPUT = "material_input";
     private static volatile int cachedAvatarShape = -1;
 
     private MaterialGramSettings() {
@@ -102,6 +98,19 @@ public final class MaterialGramSettings {
         final SharedPreferences p = prefs();
         if (p != null) {
             p.edit().putBoolean(KEY_BOTTOM_NAVIGATION, enabled).apply();
+        }
+    }
+
+    /** Material You shaped mic / send buttons in the chat input panel. Off by default. */
+    public static boolean isMaterialInputEnabled() {
+        final SharedPreferences p = prefs();
+        return p != null && p.getBoolean(KEY_MATERIAL_INPUT, false);
+    }
+
+    public static void setMaterialInputEnabled(boolean enabled) {
+        final SharedPreferences p = prefs();
+        if (p != null) {
+            p.edit().putBoolean(KEY_MATERIAL_INPUT, enabled).apply();
         }
     }
 
@@ -154,6 +163,7 @@ public final class MaterialGramShapes {
     public static final int HEART = 9;
     public static final int COUNT = 10;
 
+    private static final RectF TMP = new RectF();
     private static final ThreadLocal<Path> DRAW_PATH = new ThreadLocal<Path>() {
         @Override
         protected Path initialValue() {
@@ -202,13 +212,14 @@ public final class MaterialGramShapes {
         final float cx = left + size / 2f;
         final float cy = top + size / 2f;
         final float r = size / 2f;
-        final RectF bounds = new RectF(left, top, left + size, top + size);
         switch (shape) {
             case ROUNDED:
-                out.addRoundRect(bounds, size * 0.3f, size * 0.3f, Path.Direction.CW);
+                TMP.set(left, top, left + size, top + size);
+                out.addRoundRect(TMP, size * 0.3f, size * 0.3f, Path.Direction.CW);
                 break;
             case SQUARE:
-                out.addRoundRect(bounds, size * 0.02f, size * 0.02f, Path.Direction.CW);
+                TMP.set(left, top, left + size, top + size);
+                out.addRoundRect(TMP, size * 0.02f, size * 0.02f, Path.Direction.CW);
                 break;
             case COOKIE:
                 lobes(out, cx, cy, r, 9, 0.10f, 1f, -90f);
@@ -290,6 +301,47 @@ public final class MaterialGramShapes {
         out.cubicTo(left + size * 0.52f, top + size * 0.12f, left + size * 0.67f, top + size * 0.02f, left + size * 0.82f, top + size * 0.14f);
         out.cubicTo(left + size * 1.02f, top + size * 0.30f, left + size * 0.95f, top + size * 0.58f, left + size * 0.5f, top + size * 0.92f);
         out.close();
+    }
+}
+""")
+
+    # Shapes for the chat input panel buttons (Material You style).
+    write_text(ui_root / "MaterialGramInputStyle.java", """package org.telegram.ui;
+
+import static org.telegram.messenger.AndroidUtilities.dp;
+
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
+
+public final class MaterialGramInputStyle {
+    private static final ThreadLocal<Path> PATH = new ThreadLocal<Path>() {
+        @Override
+        protected Path initialValue() {
+            return new Path();
+        }
+    };
+
+    private MaterialGramInputStyle() {
+    }
+
+    /**
+     * Mic / send button: small corners on the left, big ones on the right.
+     * Returns false when the style is off, so the caller draws its usual round button.
+     */
+    public static boolean drawActionButton(Canvas canvas, RectF rect, Paint paint) {
+        if (canvas == null || !MaterialGramSettings.isMaterialInputEnabled()) {
+            return false;
+        }
+        final float big = rect.height() / 2f;
+        final float small = Math.min(big, dp(10));
+        final Path path = PATH.get();
+        path.reset();
+        // order: top-left, top-right, bottom-right, bottom-left (x and y each)
+        path.addRoundRect(rect, new float[]{small, small, big, big, big, big, small, small}, Path.Direction.CW);
+        canvas.drawPath(path, paint);
+        return true;
     }
 }
 """)
@@ -519,6 +571,9 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     private int avatarHeaderRow;
     private int avatarShapeRow;
     private int avatarInfoRow;
+    private int inputHeaderRow;
+    private int inputToggleRow;
+    private int inputInfoRow;
 
     private void updateRows() {
         rowCount = 0;
@@ -528,6 +583,9 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         avatarHeaderRow = rowCount++;
         avatarShapeRow = rowCount++;
         avatarInfoRow = rowCount++;
+        inputHeaderRow = rowCount++;
+        inputToggleRow = rowCount++;
+        inputInfoRow = rowCount++;
     }
 
     @Override
@@ -577,6 +635,9 @@ public class MaterialGramSettingsActivity extends BaseFragment {
             MaterialGramSettings.setBottomNavigationEnabled(!MaterialGramSettings.isBottomNavigationEnabled());
             adapter.notifyItemChanged(navToggleRow);
             updateMainTabs();
+        } else if (position == inputToggleRow) {
+            MaterialGramSettings.setMaterialInputEnabled(!MaterialGramSettings.isMaterialInputEnabled());
+            adapter.notifyItemChanged(inputToggleRow);
         }
     }
 
@@ -611,7 +672,8 @@ public class MaterialGramSettingsActivity extends BaseFragment {
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            return holder.getAdapterPosition() == navToggleRow;
+            final int position = holder.getAdapterPosition();
+            return position == navToggleRow || position == inputToggleRow;
         }
 
         @NonNull
@@ -654,14 +716,24 @@ public class MaterialGramSettingsActivity extends BaseFragment {
                 ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramNavigationInfo));
             } else if (position == avatarInfoRow) {
                 ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramAvatarsInfo));
+            } else if (position == inputHeaderRow) {
+                ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramInputHeader));
+            } else if (position == inputToggleRow) {
+                ((TextCheckCell) holder.itemView).setTextAndCheck(
+                        LocaleController.getString(R.string.MaterialGramInputButtons),
+                        MaterialGramSettings.isMaterialInputEnabled(),
+                        false
+                );
+            } else if (position == inputInfoRow) {
+                ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramInputInfo));
             }
         }
 
         @Override
         public int getItemViewType(int position) {
-            if (position == navHeaderRow || position == avatarHeaderRow) {
+            if (position == navHeaderRow || position == avatarHeaderRow || position == inputHeaderRow) {
                 return TYPE_HEADER;
-            } else if (position == navToggleRow) {
+            } else if (position == navToggleRow || position == inputToggleRow) {
                 return TYPE_TOGGLE;
             } else if (position == avatarShapeRow) {
                 return TYPE_SHAPES;
@@ -925,7 +997,6 @@ public interface MainTabsActivityController {
         }
         animateMaterialGramCapsuleWidth(collapsed, animated);
     }
-
     /** Collapsed capsule hugs the selected tab; expanded goes back to the full native width. */
     private void animateMaterialGramCapsuleWidth(boolean collapsed, boolean animated) {
         if (tabsView == null || tabsViewWrapper == null) {
@@ -1111,10 +1182,6 @@ public interface MainTabsActivityController {
         if (tabsView == null || tabs == null || viewPager == null) {
             return;
         }
-        materialGramCollapsedState = collapsed;
-        if (!collapsed) {
-            materialGramScrollAccum = 0;
-        }
         if (materialGramPendingStep != null) {
             tabsView.removeCallbacks(materialGramPendingStep);
             materialGramPendingStep = null;
@@ -1220,6 +1287,9 @@ public interface MainTabsActivityController {
         ('MaterialGramAvatarShapeTitle', 'Аватарки чатов'),
         ('MaterialGramAvatarShapeInfo', 'форма аватарок, видно только у тебя'),
         ('MaterialGramAvatarsInfo', 'Форма применяется только на этом устройстве и не видна другим людям.'),
+        ('MaterialGramInputHeader', 'Панель ввода'),
+        ('MaterialGramInputButtons', 'Панель ввода Material You'),
+        ('MaterialGramInputInfo', 'Поле ввода, скрепка и микрофон становятся отдельными элементами со своими формами. Только в обычных чатах: в каналах, у ботов и при редактировании остаётся обычная панель.'),
         ('MaterialGramShapeCircle', 'Круг'),
         ('MaterialGramShapeRounded', 'Скруглённый'),
         ('MaterialGramShapeSquare', 'Квадрат'),
@@ -1249,17 +1319,14 @@ def patch_materialgram_avatars() -> None:
     receiver = read_text(receiver_path)
     old_round = "                                        canvas.drawRoundRect(roundRect, roundRadius[0], roundRadius[0], roundPaint);\n"
     count = receiver.count(old_round)
-    wrapped_round = (
+    if count != 2:
+        fail(f"Could not safely patch ImageReceiver avatar drawing: expected two matches, found {count}.")
+    receiver = receiver.replace(
+        old_round,
         "                                        if (!org.telegram.ui.MaterialGramShapes.drawAvatarRoundRect(canvas, roundRect, roundRadius[0], roundPaint)) {\n"
         "                                            canvas.drawRoundRect(roundRect, roundRadius[0], roundRadius[0], roundPaint);\n"
         "                                        }\n"
     )
-    if count == 0 and receiver.count(wrapped_round) == 2:
-        print("MaterialGram: ImageReceiver avatar drawing already patched.")
-    elif count == 2:
-        receiver = receiver.replace(old_round, wrapped_round)
-    else:
-        fail(f"Could not safely patch ImageReceiver avatar drawing: expected two matches, found {count}.")
     write_text(receiver_path, receiver)
 
     # Letter / colour avatars without a photo.
@@ -1283,20 +1350,207 @@ def patch_materialgram_avatars() -> None:
             "                    canvas.drawRoundRect(" + rect + ", roundRadius, roundRadius, backgroundPaint);\n"
             "                }"
         )
-    if "MaterialGramShapes.drawAvatarRoundRect" in drawable:
-        print("MaterialGram: AvatarDrawable rounded background already patched.")
+    drawable, wrapped = pattern.subn(wrap_round, drawable)
+    if wrapped == 0:
+        print("WARNING: no rounded avatar background found in AvatarDrawable; letter avatars may keep a round shape.")
+        for number, line in enumerate(drawable.splitlines(), 1):
+            if "drawRoundRect" in line or "roundRadius" in line or "drawCircle" in line:
+                print(f"  AvatarDrawable:{number}: {line.strip()}")
     else:
-        drawable, wrapped = pattern.subn(wrap_round, drawable)
-        if wrapped == 0:
-            print("WARNING: no rounded avatar background found in AvatarDrawable; letter avatars may keep a round shape.")
-            for number, line in enumerate(drawable.splitlines(), 1):
-                if "drawRoundRect" in line or "roundRadius" in line or "drawCircle" in line:
-                    print(f"  AvatarDrawable:{number}: {line.strip()}")
-        else:
-            print(f"MaterialGram: wrapped {wrapped} rounded AvatarDrawable background(s).")
+        print(f"MaterialGram: wrapped {wrapped} rounded AvatarDrawable background(s).")
     write_text(drawable_path, drawable)
 
     print("MaterialGram avatar shapes were applied.")
+
+
+def patch_materialgram_input() -> None:
+    """Material You shaped mic/send buttons in the chat input panel (optional, off by default)."""
+    enter_path = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "ui" / "Components" / "ChatActivityEnterView.java"
+    enter = read_text(enter_path)
+    enter = replace_once(
+        enter,
+        "canvas.drawRoundRect(backgroundRect, r, r, paint);",
+        "if (!org.telegram.ui.MaterialGramInputStyle.drawActionButton(canvas, backgroundRect, paint)) {\n"
+        "                        canvas.drawRoundRect(backgroundRect, r, r, paint);\n"
+        "                    }",
+        "the mic button background in ChatActivityEnterView"
+    )
+    enter = replace_once(
+        enter,
+        "canvas.drawRoundRect(backgroundRect, dp(RADIUS), dp(RADIUS), backgroundPaint);",
+        "if (!org.telegram.ui.MaterialGramInputStyle.drawActionButton(canvas, backgroundRect, backgroundPaint)) {\n"
+        "                    canvas.drawRoundRect(backgroundRect, dp(RADIUS), dp(RADIUS), backgroundPaint);\n"
+        "                }",
+        "the send button background in ChatActivityEnterView"
+    )
+    write_text(enter_path, enter)
+    print("MaterialGram input panel style was applied.")
+
+
+def patch_materialgram_split_input() -> None:
+    """Split the one glass island of the chat input into field | attach | mic (plain chats only)."""
+    java_root = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "ui"
+
+    # 1) The enter view tells the container when a split is allowed and how visible the attach button is.
+    enter_path = java_root / "Components" / "ChatActivityEnterView.java"
+    enter = read_text(enter_path)
+    enter = replace_once(
+        enter,
+        "    public ImageView getAttachButton() {\n",
+        "    /** MaterialGram: attach button visibility 0..1 when the island may be split; -1 when it must stay whole. */\n"
+        "    public float materialGramAttachProgress() {\n"
+        "        if (attachButton == null || attachButton.getVisibility() != View.VISIBLE) {\n"
+        "            return -1f;\n"
+        "        }\n"
+        "        if (recordInterfaceState != 0 || editingMessageObject != null || !isChat) {\n"
+        "            return -1f;\n"
+        "        }\n"
+        "        final View[] others = new View[]{botButton, notifyButton, scheduledButton, giftButton, suggestButton, senderSelectView, botCommandsMenuButton, doneButton};\n"
+        "        for (View other : others) {\n"
+        "            if (other != null && other.getVisibility() == View.VISIBLE) {\n"
+        "                return -1f;\n"
+        "            }\n"
+        "        }\n"
+        "        return Math.max(0f, Math.min(1f, attachButton.getAlpha()));\n"
+        "    }\n"
+        "\n"
+        "    public ImageView getAttachButton() {\n",
+        "the MaterialGram attach progress method"
+    )
+    write_text(enter_path, enter)
+
+    # 2) The container draws two glass pieces instead of one.
+    container_path = java_root / "Components" / "chat" / "ChatInputViewsContainer.java"
+    container = read_text(container_path)
+    container = replace_once(
+        container,
+        "import org.telegram.ui.Components.inset.WindowInsetsProvider;\n",
+        "import org.telegram.ui.Components.inset.WindowInsetsProvider;\n"
+        "import org.telegram.ui.MaterialGramSettings;\n",
+        "the container MaterialGramSettings import"
+    )
+    container = replace_once(
+        container,
+        "    public void setUnderKeyboardBackgroundDrawable(BlurredBackgroundDrawable drawable) {\n",
+        "    public interface SplitProvider {\n"
+        "        float getAttachProgress();\n"
+        "    }\n"
+        "\n"
+        "    private SplitProvider splitProvider;\n"
+        "    private BlurredBackgroundDrawable splitAttachDrawable;\n"
+        "    private boolean splitApplied;\n"
+        "    private int inputBubbleAlpha = 255;\n"
+        "    private final Rect tmpRect2 = new Rect();\n"
+        "\n"
+        "    public void setMaterialGramSplitProvider(SplitProvider provider) {\n"
+        "        splitProvider = provider;\n"
+        "        invalidate();\n"
+        "    }\n"
+        "\n"
+        "    public void setSplitAttachDrawable(BlurredBackgroundDrawable drawable) {\n"
+        "        splitAttachDrawable = drawable;\n"
+        "        splitAttachDrawable.setPadding(dp(7));\n"
+        "        splitAttachDrawable.setRadius(dp(16), dp(8), dp(8), dp(22));\n"
+        "    }\n"
+        "\n"
+        "    private float materialGramSplitProgress() {\n"
+        "        if (splitProvider == null || !MaterialGramSettings.isMaterialInputEnabled()) {\n"
+        "            return -1f;\n"
+        "        }\n"
+        "        if (inputBubbleOffsetLeft != 0f || inputBubbleOffsetRight != 0f) {\n"
+        "            return -1f;\n"
+        "        }\n"
+        "        return splitProvider.getAttachProgress();\n"
+        "    }\n"
+        "\n"
+        "    public void setUnderKeyboardBackgroundDrawable(BlurredBackgroundDrawable drawable) {\n",
+        "the container split fields"
+    )
+    container = replace_once(
+        container,
+        "        if (underKeyboardBackgroundDrawable != null) {\n"
+        "            underKeyboardBackgroundDrawable.updateColors();\n"
+        "        }\n"
+        "        invalidate();\n",
+        "        if (underKeyboardBackgroundDrawable != null) {\n"
+        "            underKeyboardBackgroundDrawable.updateColors();\n"
+        "        }\n"
+        "        if (splitAttachDrawable != null) {\n"
+        "            splitAttachDrawable.updateColors();\n"
+        "        }\n"
+        "        invalidate();\n",
+        "the container split colors"
+    )
+    container = replace_once(
+        container,
+        "        if (blurredBackgroundDrawable != null) {\n"
+        "            blurredBackgroundDrawable.setAlpha(alpha);\n"
+        "        }\n",
+        "        inputBubbleAlpha = alpha;\n"
+        "        if (blurredBackgroundDrawable != null) {\n"
+        "            blurredBackgroundDrawable.setAlpha(alpha);\n"
+        "        }\n",
+        "the container bubble alpha"
+    )
+    container = replace_once(
+        container,
+        "        blurredBackgroundDrawable.setBounds(tmpRect);\n"
+        "        if (drawInputBackground)\n"
+        "            blurredBackgroundDrawable.draw(canvas);\n",
+        "        final float splitProgress = materialGramSplitProgress();\n"
+        "        final boolean split = splitProgress >= 0f;\n"
+        "        if (split != splitApplied) {\n"
+        "            splitApplied = split;\n"
+        "            blurredBackgroundDrawable.setRadius(dp(split ? 16 : INPUT_BUBBLE_RADIUS));\n"
+        "        }\n"
+        "        if (split) {\n"
+        "            final int visibleBottom = tmpRect.bottom - dp(7);\n"
+        "            final int visibleRight = tmpRect.right - dp(7);\n"
+        "            if (splitAttachDrawable != null && splitProgress > 0.01f) {\n"
+        "                tmpRect2.set(\n"
+        "                    visibleRight - dp(86) - dp(7),\n"
+        "                    visibleBottom - dp(42) - dp(7),\n"
+        "                    visibleRight - dp(46) + dp(7),\n"
+        "                    visibleBottom - dp(2) + dp(7)\n"
+        "                );\n"
+        "                splitAttachDrawable.setBounds(tmpRect2);\n"
+        "                splitAttachDrawable.setAlpha(Math.round(inputBubbleAlpha * splitProgress));\n"
+        "                if (drawInputBackground) {\n"
+        "                    splitAttachDrawable.draw(canvas);\n"
+        "                }\n"
+        "            }\n"
+        "            tmpRect.right -= Math.round(dp(46) + dp(44) * splitProgress);\n"
+        "        }\n"
+        "\n"
+        "        blurredBackgroundDrawable.setBounds(tmpRect);\n"
+        "        if (drawInputBackground)\n"
+        "            blurredBackgroundDrawable.draw(canvas);\n",
+        "the container split drawing"
+    )
+    write_text(container_path, container)
+
+    # 3) ChatActivity creates the second glass piece and connects the enter view.
+    chat_path = java_root / "ChatActivity.java"
+    chat = read_text(chat_path)
+    chat = replace_once(
+        chat,
+        "        chatInputViewsContainer.setUnderKeyboardBackgroundDrawable(\n"
+        "            glassBackgroundDrawableFactoryFrosted.create(chatInputViewsContainer, blurredBackgroundColorProvider));\n",
+        "        chatInputViewsContainer.setUnderKeyboardBackgroundDrawable(\n"
+        "            glassBackgroundDrawableFactoryFrosted.create(chatInputViewsContainer, blurredBackgroundColorProvider));\n"
+        "        chatInputViewsContainer.setSplitAttachDrawable(\n"
+        "            glassBackgroundDrawableFactory.create(chatInputViewsContainer, blurredBackgroundColorProvider));\n",
+        "the ChatActivity split attach glass"
+    )
+    chat = replace_once(
+        chat,
+        "        chatInputBubbleContainer.addView(chatActivityEnterView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.BOTTOM, 7, 0, 7, 0));\n",
+        "        chatInputBubbleContainer.addView(chatActivityEnterView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.BOTTOM, 7, 0, 7, 0));\n"
+        "        chatInputViewsContainer.setMaterialGramSplitProvider(chatActivityEnterView::materialGramAttachProgress);\n",
+        "the ChatActivity split provider"
+    )
+    write_text(chat_path, chat)
+    print("MaterialGram split input panel was applied.")
 
 
 def main() -> None:
@@ -1342,17 +1596,10 @@ def main() -> None:
             firebase_config = json.loads(firebase_raw.decode("utf-8"))
         except Exception:
             fail("MATERIALGRAM_GOOGLE_SERVICES_JSON_BASE64 is not valid base64-encoded Firebase JSON.")
-        if not isinstance(firebase_config, dict) or not isinstance(firebase_config.get("client", []), list):
-            fail("The supplied Firebase config must be a JSON object with a client list.")
-        packages = set()
-        for client in firebase_config.get("client", []):
-            if not isinstance(client, dict):
-                continue
-            client_info = client.get("client_info")
-            android_info = client_info.get("android_client_info") if isinstance(client_info, dict) else None
-            package_name = android_info.get("package_name") if isinstance(android_info, dict) else None
-            if isinstance(package_name, str):
-                packages.add(package_name)
+        packages = {
+            client.get("client_info", {}).get("android_client_info", {}).get("package_name")
+            for client in firebase_config.get("client", [])
+        }
         if PACKAGE not in packages:
             fail("The supplied Firebase config must contain an Android app with package org.materialgram.")
         write_text(firebase_config_path, json.dumps(firebase_config, indent=2) + "\n")
@@ -1442,6 +1689,8 @@ def main() -> None:
 
     patch_materialgram_features()
     patch_materialgram_avatars()
+    patch_materialgram_input()
+    patch_materialgram_split_input()
 
     print("MaterialGram branding and package ID applied.")
     print("Telegram API credentials injected into the temporary build checkout (values hidden).")
