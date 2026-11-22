@@ -345,22 +345,6 @@ public interface MainTabsActivityController {
     )
     main_tabs = replace_once(
         main_tabs,
-        "            if (getUserConfig().showCallsTab) {\n"
-        "                Bundle args = new Bundle();\n"
-        "                args.putBoolean(\"needFinishFragment\", false);\n"
-        "                args.putBoolean(\"hasMainTabs\", true);\n"
-        "                return new CallLogActivity(args);\n"
-        "            }\n",
-        "            if (getUserConfig().showCallsTab && !MaterialGramSettings.isBottomNavigationEnabled()) {\n"
-        "                Bundle args = new Bundle();\n"
-        "                args.putBoolean(\"needFinishFragment\", false);\n"
-        "                args.putBoolean(\"hasMainTabs\", true);\n"
-        "                return new CallLogActivity(args);\n"
-        "            }\n",
-        "the Settings tab selection for MaterialGram navigation"
-    )
-    main_tabs = replace_once(
-        main_tabs,
         "        tabsViewBackground.setRadius(dp(DialogsActivity.MAIN_TABS_HEIGHT / 2f));\n"
         "        tabsViewBackground.setPadding(dp(DialogsActivity.MAIN_TABS_MARGIN - 0.334f));\n"
         "        tabsView.setBackground(tabsViewBackground);\n",
@@ -403,60 +387,41 @@ public interface MainTabsActivityController {
     )
     main_tabs = replace_once(
         main_tabs,
-        "        float alpha = (1f - isProfile * hide) * animatorTabsVisible.getFloatValue();\n",
-        "        float alpha = MaterialGramSettings.isBottomNavigationEnabled() ? (1f - isProfile * hide) * animatorTabsVisible.getFloatValue() : 0f;\n",
-        "the optional navigation fade"
-    )
-    main_tabs = replace_once(
-        main_tabs,
-        "        final float factor = animatorTabsVisible.getFloatValue();\n",
-        "        final float factor = MaterialGramSettings.isBottomNavigationEnabled() ? animatorTabsVisible.getFloatValue() : 0f;\n",
-        "the optional navigation visibility factor"
-    )
-    main_tabs = replace_once(
-        main_tabs,
-        "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
-        "        tabsView.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n"
-        "        tabsViewWrapper.setVisibility(factor > 0 ? View.VISIBLE : View.GONE);\n",
-        "the navigation wrapper visibility"
-    )
-    main_tabs = replace_once(
-        main_tabs,
-        "        tabsView.setClickable(factor > 1);\n"
-        "        tabsView.setEnabled(factor > 1);\n",
-        "        tabsView.setClickable(factor > 0.5f);\n"
-        "        tabsView.setEnabled(factor > 0.5f);\n",
-        "the navigation interaction threshold"
-    )
-    main_tabs = replace_once(
-        main_tabs,
         "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));\n",
-        "        final float collapsedFactor = animatorTabsScrollCollapsed.getFloatValue();\n"
-        "        final float collapsedScale = lerp(1f, 0.9f, collapsedFactor);\n"
-        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor) + dp(24) * collapsedFactor);\n"
-        "        tabsView.setScaleX(collapsedScale);\n"
-        "        tabsView.setScaleY(collapsedScale);\n",
-        "the scroll-collapse visual transform"
-    )
-    main_tabs = replace_once(
-        main_tabs,
-        "            tabsView.setViewVisible(tabs[INDEX_SETTINGS], !callTabsVisible, animated);\n"
-        "            tabsView.setViewVisible(tabs[INDEX_CALLS], callTabsVisible, animated);\n",
-        "            final boolean showCalls = callTabsVisible && !MaterialGramSettings.isBottomNavigationEnabled();\n"
-        "            tabsView.setViewVisible(tabs[INDEX_SETTINGS], !showCalls, animated);\n"
-        "            tabsView.setViewVisible(tabs[INDEX_CALLS], showCalls, animated);\n",
-        "the MaterialGram Settings tab visibility"
+        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor)\n"
+        "            + animatorTabsScrollCollapsed.getFloatValue() * dp(28));\n",
+        "the scroll-collapse translation"
     )
     main_tabs = replace_once(
         main_tabs,
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
         "    public void updateMaterialGramNavigation() {\n"
-        "        if (tabsView == null || tabsViewWrapper == null || updateLayoutWrapper == null) {\n"
-        "            return;\n"
+        "        final boolean enabled = MaterialGramSettings.isBottomNavigationEnabled();\n"
+        "        final Runnable refresh = () -> {\n"
+        "            if (tabsView == null || tabsViewWrapper == null) {\n"
+        "                return;\n"
+        "            }\n"
+        "            animatorTabsScrollCollapsed.setValue(false, false);\n"
+        "            if (materialGramSearchButton != null) {\n"
+        "                materialGramSearchButton.setVisibility(enabled ? View.VISIBLE : View.GONE);\n"
+        "            }\n"
+        "            final FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) tabsView.getLayoutParams();\n"
+        "            lp.gravity = Gravity.BOTTOM | (enabled ? Gravity.LEFT : Gravity.CENTER_HORIZONTAL);\n"
+        "            lp.leftMargin = enabled ? dp(8) : 0;\n"
+        "            lp.rightMargin = enabled ? dp(60) : 0;\n"
+        "            tabsView.setLayoutParams(lp);\n"
+        "            if (dialogsActivity != null) {\n"
+        "                dialogsActivity.resetMaterialGramTabsScrollVisibility();\n"
+        "            }\n"
+        "            checkUi_tabsPosition();\n"
+        "            checkUi_fadeView();\n"
+        "            tabsViewWrapper.requestLayout();\n"
+        "        };\n"
+        "        if (tabsViewWrapper != null && tabsViewWrapper.isAttachedToWindow()) {\n"
+        "            tabsViewWrapper.post(refresh);\n"
+        "        } else {\n"
+        "            refresh.run();\n"
         "        }\n"
-        "        checkUi_callTabVisible(getUserConfig().showCallsTab, false);\n"
-        "        checkUi_tabsPosition();\n"
-        "        checkUi_fadeView();\n"
         "    }\n"
         "\n"
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
