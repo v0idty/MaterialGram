@@ -333,6 +333,7 @@ public interface MainTabsActivityController {
         "        for (int a = 0; a < tabs.length; a++) {\n",
         "    public void selectTab(int position, boolean animated) {\n"
         "        animatorTabsScrollCollapsed.setValue(false, animated);\n"
+        "        applyMaterialGramCollapse(false, animated);\n"
         "        for (int a = 0; a < tabs.length; a++) {\n",
         "the tab selection recovery"
     )
@@ -387,14 +388,20 @@ public interface MainTabsActivityController {
     )
     main_tabs = replace_once(
         main_tabs,
-        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));\n",
-        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor)\n"
-        "            + animatorTabsScrollCollapsed.getFloatValue() * dp(28));\n",
-        "the scroll-collapse translation"
-    )
-    main_tabs = replace_once(
-        main_tabs,
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
+        "    private void applyMaterialGramCollapse(boolean collapsed, boolean animated) {\n"
+        "        if (tabsView == null || tabs == null || viewPager == null) {\n"
+        "            return;\n"
+        "        }\n"
+        "        final boolean showCalls = getUserConfig().showCallsTab;\n"
+        "        final int selected = viewPager.getCurrentPosition();\n"
+        "        for (int i = 0; i < tabs.length; i++) {\n"
+        "            final boolean exists = i == INDEX_SETTINGS ? !showCalls : (i == INDEX_CALLS ? showCalls : true);\n"
+        "            final boolean isSelected = indexToPosition(i) == selected;\n"
+        "            tabsView.setViewVisible(tabs[i], exists && (!collapsed || isSelected), animated);\n"
+        "        }\n"
+        "    }\n"
+        "\n"
         "    public void updateMaterialGramNavigation() {\n"
         "        final boolean enabled = MaterialGramSettings.isBottomNavigationEnabled();\n"
         "        final Runnable refresh = () -> {\n"
@@ -402,6 +409,7 @@ public interface MainTabsActivityController {
         "                return;\n"
         "            }\n"
         "            animatorTabsScrollCollapsed.setValue(false, false);\n"
+        "            applyMaterialGramCollapse(false, false);\n"
         "            if (materialGramSearchButton != null) {\n"
         "                materialGramSearchButton.setVisibility(enabled ? View.VISIBLE : View.GONE);\n"
         "            }\n"
@@ -445,6 +453,7 @@ public interface MainTabsActivityController {
         "        public void setTabsScrollCollapsed(boolean collapsed) {\n"
         "            if (MaterialGramSettings.isBottomNavigationEnabled()) {\n"
         "                animatorTabsScrollCollapsed.setValue(collapsed, true);\n"
+        "                applyMaterialGramCollapse(collapsed, true);\n"
         "            }\n"
         "        }\n"
         "    }\n",
@@ -457,6 +466,17 @@ public interface MainTabsActivityController {
         "initial MaterialGram navigation visibility synchronization"
     )
     write_text(main_tabs_path, main_tabs)
+
+    # When collapse leaves one tab visible, do not keep the old 320dp minimum width.
+    layout_path = ui_root / "MainTabsLayout.java"
+    layout = read_text(layout_path)
+    layout = replace_once(
+        layout,
+        "        final int minTotalWidthForTabs = Math.min(dp(320), maxTotalWidthForTabs);\n",
+        "        final int minTotalWidthForTabs = visibleChildCount <= 1 ? 0 : Math.min(dp(320), maxTotalWidthForTabs);\n",
+        "the single-tab compact capsule width"
+    )
+    write_text(layout_path, layout)
 
     # Make the native chat-list scroll listener hide/reveal the capsule by direction.
     dialogs_path = ui_root / "DialogsActivity.java"
@@ -515,7 +535,7 @@ public interface MainTabsActivityController {
         ('MaterialGramSettingsInfo', 'Дополнительные настройки интерфейса MaterialGram'),
         ('MaterialGramNavigationHeader', 'Нижняя панель навигации'),
         ('MaterialGramNavigationEnabled', 'Включить панель MaterialGram'),
-        ('MaterialGramNavigationInfo', 'Плавающая панель с активной капсулой. При прокрутке чатов вниз она компактно смещается, оставаясь доступной; при прокрутке вверх возвращается.'),
+        ('MaterialGramNavigationInfo', 'Плавающая панель с активной вкладкой. При прокрутке чатов вниз остаётся выбранная вкладка; при прокрутке вверх остальные вкладки возвращаются.'),
     ]
     for name, value in additions:
         if f'name="{name}"' not in strings:
