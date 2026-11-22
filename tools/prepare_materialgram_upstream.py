@@ -1265,10 +1265,10 @@ def patch_materialgram_avatars() -> None:
     )
     drawable = replace_once(
         drawable,
-        "                canvas.drawRoundRect(AndroidUtilities.rectTmp, roundRadius, roundRadius, backgroundPaint);\\n",
-        "                if (!org.telegram.ui.MaterialGramShapes.drawAvatarRoundRect(canvas, AndroidUtilities.rectTmp, roundRadius, backgroundPaint)) {\\n"
-        "                    canvas.drawRoundRect(AndroidUtilities.rectTmp, roundRadius, roundRadius, backgroundPaint);\\n"
-        "                }\\n",
+        "                canvas.drawRoundRect(AndroidUtilities.rectTmp, roundRadius, roundRadius, backgroundPaint);\n",
+        "                if (!org.telegram.ui.MaterialGramShapes.drawAvatarRoundRect(canvas, AndroidUtilities.rectTmp, roundRadius, backgroundPaint)) {\n"
+        "                    canvas.drawRoundRect(AndroidUtilities.rectTmp, roundRadius, roundRadius, backgroundPaint);\n"
+        "                }\n",
         "the AvatarDrawable rounded background"
     )
     write_text(drawable_path, drawable)
