@@ -70,34 +70,409 @@ def patch_materialgram_features() -> None:
     write_text(settings_helper, """package org.telegram.ui;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import org.telegram.messenger.ApplicationLoader;
 
 /** Preferences owned by the MaterialGram fork. */
 public final class MaterialGramSettings {
     private static final String PREFERENCES = "materialgram_settings";
     private static final String KEY_BOTTOM_NAVIGATION = "bottom_navigation_enabled";
+    private static final String KEY_AVATAR_SHAPE = "avatar_shape";
+    private static volatile int cachedAvatarShape = -1;
 
     private MaterialGramSettings() {
     }
 
-    public static boolean isBottomNavigationEnabled() {
+    private static SharedPreferences prefs() {
         final Context context = ApplicationLoader.applicationContext;
-        return context == null || context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                .getBoolean(KEY_BOTTOM_NAVIGATION, true);
+        return context == null ? null : context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+    }
+
+    public static boolean isBottomNavigationEnabled() {
+        final SharedPreferences p = prefs();
+        return p == null || p.getBoolean(KEY_BOTTOM_NAVIGATION, true);
     }
 
     public static void setBottomNavigationEnabled(boolean enabled) {
-        final Context context = ApplicationLoader.applicationContext;
-        if (context != null) {
-            context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-                    .edit()
-                    .putBoolean(KEY_BOTTOM_NAVIGATION, enabled)
-                    .apply();
+        final SharedPreferences p = prefs();
+        if (p != null) {
+            p.edit().putBoolean(KEY_BOTTOM_NAVIGATION, enabled).apply();
+        }
+    }
+
+    /** One of MaterialGramShapes.CIRCLE ... MaterialGramShapes.HEART. Local only, never sent anywhere. */
+    public static int getAvatarShape() {
+        final int cached = cachedAvatarShape;
+        if (cached >= 0) {
+            return cached;
+        }
+        final SharedPreferences p = prefs();
+        if (p == null) {
+            return MaterialGramShapes.CIRCLE;
+        }
+        final int value = p.getInt(KEY_AVATAR_SHAPE, MaterialGramShapes.CIRCLE);
+        final int safe = value >= 0 && value < MaterialGramShapes.COUNT ? value : MaterialGramShapes.CIRCLE;
+        cachedAvatarShape = safe;
+        return safe;
+    }
+
+    public static void setAvatarShape(int shape) {
+        final SharedPreferences p = prefs();
+        if (p != null && shape >= 0 && shape < MaterialGramShapes.COUNT) {
+            cachedAvatarShape = shape;
+            p.edit().putInt(KEY_AVATAR_SHAPE, shape).apply();
         }
     }
 }
 """)
 
+    # Outlines of every selectable avatar shape (pure geometry, no Telegram dependencies).
+    write_text(ui_root / "MaterialGramShapes.java", """package org.telegram.ui;
+
+import static org.telegram.messenger.AndroidUtilities.dp;
+
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
+
+public final class MaterialGramShapes {
+    public static final int CIRCLE = 0;
+    public static final int ROUNDED = 1;
+    public static final int SQUARE = 2;
+    public static final int COOKIE = 3;
+    public static final int CLOVER = 4;
+    public static final int BURST = 5;
+    public static final int SUN = 6;
+    public static final int PENTAGON = 7;
+    public static final int HEXAGON = 8;
+    public static final int HEART = 9;
+    public static final int COUNT = 10;
+
+    private static final RectF TMP = new RectF();
+    private static final ThreadLocal<Path> DRAW_PATH = new ThreadLocal<Path>() {
+        @Override
+        protected Path initialValue() {
+            return new Path();
+        }
+    };
+
+    private MaterialGramShapes() {
+    }
+
+    /**
+     * Photo avatars: Telegram draws them as a round rect whose radius is half the size.
+     * Draws the chosen shape instead and returns true; returns false (draw normally) for anything else.
+     */
+    public static boolean drawAvatarRoundRect(Canvas canvas, RectF rect, float radius, Paint paint) {
+        final int shape = MaterialGramSettings.getAvatarShape();
+        if (shape == CIRCLE || canvas == null) {
+            return false;
+        }
+        final float w = rect.width();
+        final float h = rect.height();
+        if (w < dp(20) || w > dp(180) || Math.abs(w - h) > 1.5f || radius < w / 2f - 1.5f) {
+            return false;
+        }
+        final Path path = DRAW_PATH.get();
+        fillPath(path, shape, rect.left, rect.top, w);
+        canvas.drawPath(path, paint);
+        return true;
+    }
+
+    /** Letter avatars (AvatarDrawable): the canvas is already translated to the avatar's corner. */
+    public static boolean drawAvatarCircle(Canvas canvas, float size, Paint paint) {
+        final int shape = MaterialGramSettings.getAvatarShape();
+        if (shape == CIRCLE || canvas == null || size < dp(20) || size > dp(220)) {
+            return false;
+        }
+        final Path path = DRAW_PATH.get();
+        fillPath(path, shape, 0, 0, size);
+        canvas.drawPath(path, paint);
+        return true;
+    }
+
+    /** Writes the outline of the shape into out, fitted into the square (left, top, size). */
+    public static void fillPath(Path out, int shape, float left, float top, float size) {
+        out.reset();
+        final float cx = left + size / 2f;
+        final float cy = top + size / 2f;
+        final float r = size / 2f;
+        switch (shape) {
+            case ROUNDED:
+                TMP.set(left, top, left + size, top + size);
+                out.addRoundRect(TMP, size * 0.3f, size * 0.3f, Path.Direction.CW);
+                break;
+            case SQUARE:
+                TMP.set(left, top, left + size, top + size);
+                out.addRoundRect(TMP, size * 0.02f, size * 0.02f, Path.Direction.CW);
+                break;
+            case COOKIE:
+                lobes(out, cx, cy, r, 9, 0.10f, 1f, -90f);
+                break;
+            case CLOVER:
+                lobes(out, cx, cy, r, 4, 0.17f, 1f, 45f);
+                break;
+            case BURST:
+                lobes(out, cx, cy, r, 12, 0.16f, 3f, -90f);
+                break;
+            case SUN:
+                lobes(out, cx, cy, r, 8, 0.15f, 2f, -90f);
+                break;
+            case PENTAGON:
+                polygon(out, cx, cy, r * 0.98f, 5, 0.2f);
+                break;
+            case HEXAGON:
+                polygon(out, cx, cy, r, 6, 0.2f);
+                break;
+            case HEART:
+                heart(out, left, top, size);
+                break;
+            case CIRCLE:
+            default:
+                out.addCircle(cx, cy, r, Path.Direction.CW);
+                break;
+        }
+    }
+
+    /** A circle whose radius swells and shrinks n times: cookies, clovers, bursts, suns. */
+    private static void lobes(Path out, float cx, float cy, float r, int n, float amp, float sharp, float rotationDeg) {
+        final int steps = 360;
+        final double rot = Math.toRadians(rotationDeg);
+        for (int i = 0; i <= steps; i++) {
+            final double theta = Math.PI * 2 * i / steps;
+            final double bump = Math.pow((1.0 + Math.cos(n * (theta - rot))) / 2.0, sharp);
+            final double radius = r * (1.0 - amp + amp * bump);
+            final float x = (float) (cx + radius * Math.cos(theta));
+            final float y = (float) (cy + radius * Math.sin(theta));
+            if (i == 0) {
+                out.moveTo(x, y);
+            } else {
+                out.lineTo(x, y);
+            }
+        }
+        out.close();
+    }
+
+    /** Regular polygon with softly rounded corners. */
+    private static void polygon(Path out, float cx, float cy, float r, int n, float corner) {
+        final float[] vx = new float[n];
+        final float[] vy = new float[n];
+        for (int i = 0; i < n; i++) {
+            final double a = -Math.PI / 2 + Math.PI * 2 * i / n;
+            vx[i] = (float) (cx + r * Math.cos(a));
+            vy[i] = (float) (cy + r * Math.sin(a));
+        }
+        for (int i = 0; i < n; i++) {
+            final int prev = (i + n - 1) % n;
+            final int next = (i + 1) % n;
+            final float p1x = vx[i] + (vx[prev] - vx[i]) * corner;
+            final float p1y = vy[i] + (vy[prev] - vy[i]) * corner;
+            final float p2x = vx[i] + (vx[next] - vx[i]) * corner;
+            final float p2y = vy[i] + (vy[next] - vy[i]) * corner;
+            if (i == 0) {
+                out.moveTo(p1x, p1y);
+            } else {
+                out.lineTo(p1x, p1y);
+            }
+            out.quadTo(vx[i], vy[i], p2x, p2y);
+        }
+        out.close();
+    }
+
+    private static void heart(Path out, float left, float top, float size) {
+        out.moveTo(left + size * 0.5f, top + size * 0.92f);
+        out.cubicTo(left + size * 0.05f, top + size * 0.58f, left - size * 0.02f, top + size * 0.30f, left + size * 0.18f, top + size * 0.14f);
+        out.cubicTo(left + size * 0.33f, top + size * 0.02f, left + size * 0.48f, top + size * 0.12f, left + size * 0.5f, top + size * 0.28f);
+        out.cubicTo(left + size * 0.52f, top + size * 0.12f, left + size * 0.67f, top + size * 0.02f, left + size * 0.82f, top + size * 0.14f);
+        out.cubicTo(left + size * 1.02f, top + size * 0.30f, left + size * 0.95f, top + size * 0.58f, left + size * 0.5f, top + size * 0.92f);
+        out.close();
+    }
+}
+""")
+
+    # Horizontal shape picker row.
+    write_text(ui_root / "MaterialGramShapePickerCell.java", """package org.telegram.ui;
+
+import static org.telegram.messenger.AndroidUtilities.dp;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.RectF;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import androidx.core.graphics.ColorUtils;
+
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.R;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LayoutHelper;
+
+public class MaterialGramShapePickerCell extends FrameLayout {
+    public interface Listener {
+        void onShapeSelected(int shape);
+    }
+
+    private static final int[] NAMES = {
+        R.string.MaterialGramShapeCircle,
+        R.string.MaterialGramShapeRounded,
+        R.string.MaterialGramShapeSquare,
+        R.string.MaterialGramShapeCookie,
+        R.string.MaterialGramShapeClover,
+        R.string.MaterialGramShapeBurst,
+        R.string.MaterialGramShapeSun,
+        R.string.MaterialGramShapePentagon,
+        R.string.MaterialGramShapeHexagon,
+        R.string.MaterialGramShapeHeart
+    };
+
+    private final TextView titleView;
+    private final TextView subtitleView;
+    private final TextView valueView;
+    private final HorizontalScrollView scrollView;
+    private final ShapeItemView[] items = new ShapeItemView[MaterialGramShapes.COUNT];
+    private Listener listener;
+    private int selected = -1;
+
+    public MaterialGramShapePickerCell(Context context) {
+        super(context);
+
+        titleView = new TextView(context);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        titleView.setTypeface(AndroidUtilities.bold());
+        titleView.setText(LocaleController.getString(R.string.MaterialGramAvatarShapeTitle));
+        addView(titleView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.LEFT, 21, 16, 130, 0));
+
+        subtitleView = new TextView(context);
+        subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        subtitleView.setText(LocaleController.getString(R.string.MaterialGramAvatarShapeInfo));
+        addView(subtitleView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.LEFT, 21, 40, 130, 0));
+
+        valueView = new TextView(context);
+        valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        valueView.setTypeface(AndroidUtilities.bold());
+        addView(valueView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT, 0, 20, 21, 0));
+
+        scrollView = new HorizontalScrollView(context);
+        scrollView.setHorizontalScrollBarEnabled(false);
+        scrollView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        final LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(8), 0, dp(8), 0);
+        for (int i = 0; i < MaterialGramShapes.COUNT; i++) {
+            final int shape = i;
+            items[i] = new ShapeItemView(context, shape, LocaleController.getString(NAMES[i]));
+            items[i].setOnClickListener(v -> {
+                setSelected(shape, true);
+                if (listener != null) {
+                    listener.onShapeSelected(shape);
+                }
+            });
+            row.addView(items[i], new LinearLayout.LayoutParams(dp(84), dp(100)));
+        }
+        scrollView.addView(row, new FrameLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+        addView(scrollView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 100, Gravity.TOP, 0, 76, 0, 0));
+
+        updateColors();
+    }
+
+    public void setListener(Listener listener) {
+        this.listener = listener;
+    }
+
+    public void setSelected(int shape, boolean animateScroll) {
+        selected = shape;
+        for (int i = 0; i < items.length; i++) {
+            items[i].setPicked(i == shape);
+        }
+        valueView.setText(LocaleController.getString(NAMES[shape]));
+        scrollView.post(() -> {
+            final int target = Math.max(0, items[shape].getLeft() - dp(84));
+            if (animateScroll) {
+                scrollView.smoothScrollTo(target, 0);
+            } else {
+                scrollView.scrollTo(target, 0);
+            }
+        });
+    }
+
+    public void updateColors() {
+        titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+        valueView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        for (ShapeItemView item : items) {
+            item.invalidate();
+        }
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(dp(188), MeasureSpec.EXACTLY));
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        updateColors();
+    }
+
+    private static class ShapeItemView extends View {
+        private final int shape;
+        private final String label;
+        private final Path path = new Path();
+        private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+        private boolean picked;
+
+        ShapeItemView(Context context, int shape, String label) {
+            super(context);
+            this.shape = shape;
+            this.label = label;
+            textPaint.setTextSize(dp(12));
+            textPaint.setTypeface(AndroidUtilities.bold());
+            textPaint.setTextAlign(Paint.Align.CENTER);
+        }
+
+        void setPicked(boolean picked) {
+            if (this.picked != picked) {
+                this.picked = picked;
+                invalidate();
+            }
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            final int accent = Theme.getColor(Theme.key_featuredStickers_addButton);
+            final int gray = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2);
+            final float w = getWidth();
+            final float h = getHeight();
+            if (picked) {
+                fillPaint.setColor(ColorUtils.setAlphaComponent(accent, 46));
+                rect.set(dp(4), dp(2), w - dp(4), h - dp(2));
+                canvas.drawRoundRect(rect, dp(26), dp(26), fillPaint);
+            }
+            final float size = dp(48);
+            MaterialGramShapes.fillPath(path, shape, (w - size) / 2f, dp(16), size);
+            fillPaint.setColor(picked ? accent : gray);
+            canvas.drawPath(path, fillPaint);
+            textPaint.setColor(picked ? Theme.getColor(Theme.key_windowBackgroundWhiteBlackText) : gray);
+            canvas.drawText(label, w / 2f, dp(84), textPaint);
+        }
+    }
+}
+""")
+
+    # MaterialGram settings page. Every group is a block of rows built in updateRows().
     settings_screen = ui_root / "MaterialGramSettingsActivity.java"
     write_text(settings_screen, """package org.telegram.ui;
 
@@ -111,6 +486,8 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -122,12 +499,39 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 
 public class MaterialGramSettingsActivity extends BaseFragment {
-    private static final int ROW_HEADER = 0;
-    private static final int ROW_NAVIGATION = 1;
-    private static final int ROW_INFO = 2;
+    private static final int TYPE_HEADER = 0;
+    private static final int TYPE_TOGGLE = 1;
+    private static final int TYPE_INFO = 2;
+    private static final int TYPE_SHAPES = 3;
 
     private RecyclerListView listView;
     private ListAdapter adapter;
+
+    // To add a setting: declare a row id here, give it a position in updateRows(),
+    // then handle it in getItemViewType / onBindViewHolder / onRowClicked.
+    private int rowCount;
+    private int navHeaderRow;
+    private int navToggleRow;
+    private int navInfoRow;
+    private int avatarHeaderRow;
+    private int avatarShapeRow;
+    private int avatarInfoRow;
+
+    private void updateRows() {
+        rowCount = 0;
+        navHeaderRow = rowCount++;
+        navToggleRow = rowCount++;
+        navInfoRow = rowCount++;
+        avatarHeaderRow = rowCount++;
+        avatarShapeRow = rowCount++;
+        avatarInfoRow = rowCount++;
+    }
+
+    @Override
+    public boolean onFragmentCreate() {
+        updateRows();
+        return super.onFragmentCreate();
+    }
 
     @Override
     protected boolean useSimpleActionBar() {
@@ -166,12 +570,17 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     }
 
     private void onRowClicked(int position) {
-        if (position != ROW_NAVIGATION) {
-            return;
+        if (position == navToggleRow) {
+            MaterialGramSettings.setBottomNavigationEnabled(!MaterialGramSettings.isBottomNavigationEnabled());
+            adapter.notifyItemChanged(navToggleRow);
+            updateMainTabs();
         }
-        MaterialGramSettings.setBottomNavigationEnabled(!MaterialGramSettings.isBottomNavigationEnabled());
-        adapter.notifyItemChanged(ROW_NAVIGATION);
-        updateMainTabs();
+    }
+
+    private void onShapeSelected(int shape) {
+        MaterialGramSettings.setAvatarShape(shape);
+        NotificationCenter.getInstance(currentAccount).postNotificationName(
+                NotificationCenter.updateInterfaces, MessagesController.UPDATE_MASK_AVATAR);
     }
 
     private void updateMainTabs() {
@@ -194,22 +603,26 @@ public class MaterialGramSettingsActivity extends BaseFragment {
 
         @Override
         public int getItemCount() {
-            return 3;
+            return rowCount;
         }
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            return holder.getAdapterPosition() == ROW_NAVIGATION;
+            return holder.getAdapterPosition() == navToggleRow;
         }
 
         @NonNull
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             View view;
-            if (viewType == ROW_HEADER) {
+            if (viewType == TYPE_HEADER) {
                 view = new HeaderCell(context);
-            } else if (viewType == ROW_NAVIGATION) {
+            } else if (viewType == TYPE_TOGGLE) {
                 view = new TextCheckCell(context);
+            } else if (viewType == TYPE_SHAPES) {
+                final MaterialGramShapePickerCell cell = new MaterialGramShapePickerCell(context);
+                cell.setListener(MaterialGramSettingsActivity.this::onShapeSelected);
+                view = cell;
             } else {
                 view = new TextInfoPrivacyCell(context);
             }
@@ -222,26 +635,35 @@ public class MaterialGramSettingsActivity extends BaseFragment {
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-            if (position == ROW_HEADER) {
-                ((HeaderCell) holder.itemView).setText(
-                        LocaleController.getString(R.string.MaterialGramNavigationHeader)
-                );
-            } else if (position == ROW_NAVIGATION) {
+            if (position == navHeaderRow) {
+                ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramNavigationHeader));
+            } else if (position == avatarHeaderRow) {
+                ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramAvatarsHeader));
+            } else if (position == navToggleRow) {
                 ((TextCheckCell) holder.itemView).setTextAndCheck(
                         LocaleController.getString(R.string.MaterialGramNavigationEnabled),
                         MaterialGramSettings.isBottomNavigationEnabled(),
                         false
                 );
-            } else {
-                ((TextInfoPrivacyCell) holder.itemView).setText(
-                        LocaleController.getString(R.string.MaterialGramNavigationInfo)
-                );
+            } else if (position == avatarShapeRow) {
+                ((MaterialGramShapePickerCell) holder.itemView).setSelected(MaterialGramSettings.getAvatarShape(), false);
+            } else if (position == navInfoRow) {
+                ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramNavigationInfo));
+            } else if (position == avatarInfoRow) {
+                ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramAvatarsInfo));
             }
         }
 
         @Override
         public int getItemViewType(int position) {
-            return position;
+            if (position == navHeaderRow || position == avatarHeaderRow) {
+                return TYPE_HEADER;
+            } else if (position == navToggleRow) {
+                return TYPE_TOGGLE;
+            } else if (position == avatarShapeRow) {
+                return TYPE_SHAPES;
+            }
+            return TYPE_INFO;
         }
     }
 
@@ -787,6 +1209,20 @@ public interface MainTabsActivityController {
         ('MaterialGramNavigationHeader', 'Нижняя панель навигации'),
         ('MaterialGramNavigationEnabled', 'Включить панель MaterialGram'),
         ('MaterialGramNavigationInfo', 'Капсула с кнопкой поиска. При прокрутке чатов вниз она сворачивается до одной вкладки, при прокрутке вверх раскрывается. Если выключить, остаётся обычная панель Telegram.'),
+        ('MaterialGramAvatarsHeader', 'Аватарки и иконки'),
+        ('MaterialGramAvatarShapeTitle', 'Аватарки чатов'),
+        ('MaterialGramAvatarShapeInfo', 'форма аватарок, видно только у тебя'),
+        ('MaterialGramAvatarsInfo', 'Форма применяется только на этом устройстве и не видна другим людям.'),
+        ('MaterialGramShapeCircle', 'Круг'),
+        ('MaterialGramShapeRounded', 'Скруглённый'),
+        ('MaterialGramShapeSquare', 'Квадрат'),
+        ('MaterialGramShapeCookie', 'Печенье'),
+        ('MaterialGramShapeClover', 'Клевер'),
+        ('MaterialGramShapeBurst', 'Вспышка'),
+        ('MaterialGramShapeSun', 'Солнце'),
+        ('MaterialGramShapePentagon', 'Пятиугольник'),
+        ('MaterialGramShapeHexagon', 'Шестиугольник'),
+        ('MaterialGramShapeHeart', 'Сердце'),
     ]
     for name, value in additions:
         if f'name="{name}"' not in strings:
@@ -795,6 +1231,41 @@ public interface MainTabsActivityController {
     write_text(strings_path, strings)
 
     print("MaterialGram adaptive navigation and its settings screen were applied.")
+
+
+def patch_materialgram_avatars() -> None:
+    """Make every circular avatar follow the shape chosen in MaterialGram settings."""
+    java_root = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram"
+
+    # Photo avatars: ImageReceiver draws them through a bitmap shader at two places.
+    receiver_path = java_root / "messenger" / "ImageReceiver.java"
+    receiver = read_text(receiver_path)
+    old_round = "                                        canvas.drawRoundRect(roundRect, roundRadius[0], roundRadius[0], roundPaint);\n"
+    count = receiver.count(old_round)
+    if count != 2:
+        fail(f"Could not safely patch ImageReceiver avatar drawing: expected two matches, found {count}.")
+    receiver = receiver.replace(
+        old_round,
+        "                                        if (!org.telegram.ui.MaterialGramShapes.drawAvatarRoundRect(canvas, roundRect, roundRadius[0], roundPaint)) {\n"
+        "                                            canvas.drawRoundRect(roundRect, roundRadius[0], roundRadius[0], roundPaint);\n"
+        "                                        }\n"
+    )
+    write_text(receiver_path, receiver)
+
+    # Letter / colour avatars without a photo.
+    drawable_path = java_root / "ui" / "Components" / "AvatarDrawable.java"
+    drawable = read_text(drawable_path)
+    drawable = replace_once(
+        drawable,
+        "                canvas.drawCircle(size / 2.0f, size / 2.0f, size / 2.0f, backgroundPaint);\n",
+        "                if (!org.telegram.ui.MaterialGramShapes.drawAvatarCircle(canvas, size, backgroundPaint)) {\n"
+        "                    canvas.drawCircle(size / 2.0f, size / 2.0f, size / 2.0f, backgroundPaint);\n"
+        "                }\n",
+        "the AvatarDrawable circle background"
+    )
+    write_text(drawable_path, drawable)
+
+    print("MaterialGram avatar shapes were applied.")
 
 
 def main() -> None:
@@ -932,6 +1403,7 @@ def main() -> None:
         write_text(manifest_path, manifest)
 
     patch_materialgram_features()
+    patch_materialgram_avatars()
 
     print("MaterialGram branding and package ID applied.")
     print("Telegram API credentials injected into the temporary build checkout (values hidden).")
