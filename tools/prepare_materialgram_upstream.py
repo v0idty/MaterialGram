@@ -50,8 +50,6 @@ def set_java_value(content: str, field: str, value: str) -> str:
     return updated
 
 
-
-
 def replace_once(content: str, old: str, new: str, description: str) -> str:
     count = content.count(old)
     if count != 1:
@@ -60,11 +58,14 @@ def replace_once(content: str, old: str, new: str, description: str) -> str:
 
 
 def patch_materialgram_features() -> None:
-    """Patch the pinned Telegram UI with MaterialGram's optional adaptive navigation."""
-    ui_root = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "ui"
-    messenger_root = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "messenger"
+    """Patch the pinned Telegram UI with MaterialGram's optional adaptive navigation.
 
-    # Persist the user preference separately from Telegram's own settings.
+    The native Telegram tab capsule always stays on screen. The MaterialGram
+    switch only toggles the extras: the search button and the collapse-on-scroll
+    behaviour (only the selected tab stays expanded while the chat list scrolls down).
+    """
+    ui_root = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "ui"
+
     settings_helper = ui_root / "MaterialGramSettings.java"
     write_text(settings_helper, """package org.telegram.ui;
 
@@ -97,7 +98,6 @@ public final class MaterialGramSettings {
 }
 """)
 
-    # A dedicated MaterialGram settings page with a real persistent switch.
     settings_screen = ui_root / "MaterialGramSettingsActivity.java"
     write_text(settings_screen, """package org.telegram.ui;
 
@@ -257,7 +257,6 @@ public class MaterialGramSettingsActivity extends BaseFragment {
 }
 """)
 
-    # Add MaterialGram's settings entry at the top of Telegram's Settings list.
     controller_path = ui_root / "MainTabsActivityController.java"
     write_text(controller_path, """package org.telegram.ui;
 
@@ -285,8 +284,6 @@ public interface MainTabsActivityController {
     )
     write_text(settings_path, settings)
 
-    # Telegram already implements the expanding selected capsule. Extend its
-    # native MainTabsActivity with a separate search button and the opt-in gate.
     main_tabs_path = ui_root / "MainTabsActivity.java"
     main_tabs = read_text(main_tabs_path)
     main_tabs = replace_once(
@@ -327,6 +324,7 @@ public interface MainTabsActivityController {
         "    private View materialGramSearchButton;\n",
         "the MaterialGram search button field"
     )
+    # Selecting a tab always re-expands the capsule.
     main_tabs = replace_once(
         main_tabs,
         "    public void selectTab(int position, boolean animated) {\n"
@@ -386,27 +384,24 @@ public interface MainTabsActivityController {
         "        contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));\n",
         "the MainTabsActivity capsule and search-button layout"
     )
-    main_tabs = replace_once(
-        main_tabs,
-        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));\n",
-        "        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor)\n"
-        "            + animatorTabsScrollCollapsed.getFloatValue() * dp(28));\n",
-        "the scroll-collapse translation"
-    )
+    # The refresh + collapse helpers. The native capsule is never hidden here.
     main_tabs = replace_once(
         main_tabs,
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
+        "    /** Collapsed: only the selected tab stays in the capsule (expanded with its label). */\n"
         "    private void applyMaterialGramCollapse(boolean collapsed, boolean animated) {\n"
         "        if (tabsView == null || tabs == null || viewPager == null) {\n"
         "            return;\n"
         "        }\n"
-        "        final int selectedPosition = viewPager.getCurrentPosition();\n"
-        "        final boolean showCallsTab = getUserConfig().showCallsTab;\n"
+        "        final boolean showCalls = getUserConfig().showCallsTab;\n"
+        "        final int selected = viewPager.getCurrentPosition();\n"
         "        for (int i = 0; i < tabs.length; i++) {\n"
-        "            final boolean exists = i != INDEX_SETTINGS || !showCallsTab;\n"
-        "            final boolean callsExists = i != INDEX_CALLS || showCallsTab;\n"
-        "            final boolean selected = indexToPosition(i) == selectedPosition;\n"
-        "            tabsView.setViewVisible(tabs[i], exists && callsExists && (!collapsed || selected), animated);\n"
+        "            if (tabs[i] == null) {\n"
+        "                continue;\n"
+        "            }\n"
+        "            final boolean exists = i == INDEX_SETTINGS ? !showCalls : (i == INDEX_CALLS ? showCalls : true);\n"
+        "            final boolean isSelected = indexToPosition(i) == selected;\n"
+        "            tabsView.setViewVisible(tabs[i], exists && (!collapsed || isSelected), animated);\n"
         "        }\n"
         "    }\n"
         "\n"
@@ -421,11 +416,14 @@ public interface MainTabsActivityController {
         "            if (materialGramSearchButton != null) {\n"
         "                materialGramSearchButton.setVisibility(enabled ? View.VISIBLE : View.GONE);\n"
         "            }\n"
-        "            final FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) tabsView.getLayoutParams();\n"
-        "            lp.gravity = Gravity.BOTTOM | (enabled ? Gravity.LEFT : Gravity.CENTER_HORIZONTAL);\n"
-        "            lp.leftMargin = enabled ? dp(8) : 0;\n"
-        "            lp.rightMargin = enabled ? dp(60) : 0;\n"
-        "            tabsView.setLayoutParams(lp);\n"
+        "            final ViewGroup.LayoutParams rawLp = tabsView.getLayoutParams();\n"
+        "            if (rawLp instanceof FrameLayout.LayoutParams) {\n"
+        "                final FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) rawLp;\n"
+        "                lp.gravity = Gravity.BOTTOM | (enabled ? Gravity.LEFT : Gravity.CENTER_HORIZONTAL);\n"
+        "                lp.leftMargin = enabled ? dp(8) : 0;\n"
+        "                lp.rightMargin = enabled ? dp(60) : 0;\n"
+        "                tabsView.setLayoutParams(lp);\n"
+        "            }\n"
         "            if (dialogsActivity != null) {\n"
         "                dialogsActivity.resetMaterialGramTabsScrollVisibility();\n"
         "            }\n"
@@ -471,11 +469,179 @@ public interface MainTabsActivityController {
         main_tabs,
         "        updateLayout();\n        checkUnreadCount(false);\n        return contentView;\n",
         "        updateLayout();\n        updateMaterialGramNavigation();\n        checkUnreadCount(false);\n        return contentView;\n",
-        "initial MaterialGram navigation visibility synchronization"
+        "initial MaterialGram navigation synchronization"
+    )
+
+    # ---- Capsule width animation + scroll collapse on every tab -------------
+    main_tabs = replace_once(
+        main_tabs,
+        '''    private View materialGramSearchButton;
+''',
+        '''    private View materialGramSearchButton;
+    private android.animation.ValueAnimator materialGramWidthAnimator;
+    private final java.util.Set<BaseFragment> materialGramScrollHooked =
+        java.util.Collections.newSetFromMap(new java.util.WeakHashMap<BaseFragment, Boolean>());
+''',
+        "the MaterialGram width animator fields"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        '''            tabsView.setViewVisible(tabs[i], exists && (!collapsed || isSelected), animated);
+        }
+    }
+''',
+        '''            tabsView.setViewVisible(tabs[i], exists && (!collapsed || isSelected), animated);
+        }
+        animateMaterialGramCapsuleWidth(collapsed, animated);
+    }
+
+    /** Collapsed capsule hugs the selected tab; expanded goes back to the full native width. */
+    private void animateMaterialGramCapsuleWidth(boolean collapsed, boolean animated) {
+        if (tabsView == null || tabsViewWrapper == null) {
+            return;
+        }
+        final ViewGroup.LayoutParams raw = tabsView.getLayoutParams();
+        if (!(raw instanceof FrameLayout.LayoutParams)) {
+            return;
+        }
+        final FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) raw;
+        final int available = tabsViewWrapper.getWidth() - tabsViewWrapper.getPaddingLeft()
+            - tabsViewWrapper.getPaddingRight() - lp.leftMargin - lp.rightMargin;
+        if (available <= 0) {
+            return;
+        }
+        final int expandedWidth = Math.min(available, dp(328 + DialogsActivity.MAIN_TABS_MARGIN * 2));
+        final int target = collapsed ? Math.min(expandedWidth, dp(116)) : expandedWidth;
+        if (!collapsed && lp.width == ViewGroup.LayoutParams.MATCH_PARENT) {
+            return;
+        }
+        if (collapsed && lp.width == target) {
+            return;
+        }
+        if (materialGramWidthAnimator != null) {
+            materialGramWidthAnimator.cancel();
+            materialGramWidthAnimator = null;
+        }
+        if (!animated) {
+            lp.width = collapsed ? target : ViewGroup.LayoutParams.MATCH_PARENT;
+            tabsView.setLayoutParams(lp);
+            return;
+        }
+        final int from = lp.width > 0 ? lp.width : (tabsView.getWidth() > 0 ? tabsView.getWidth() : expandedWidth);
+        final android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofInt(from, target);
+        animator.setDuration(240);
+        animator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+        animator.addUpdateListener(a -> {
+            lp.width = (int) a.getAnimatedValue();
+            tabsView.setLayoutParams(lp);
+        });
+        animator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (!collapsed) {
+                    lp.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                    tabsView.setLayoutParams(lp);
+                }
+                if (materialGramWidthAnimator == animator) {
+                    materialGramWidthAnimator = null;
+                }
+            }
+        });
+        materialGramWidthAnimator = animator;
+        animator.start();
+    }
+
+    private void materialGramSetCollapsed(boolean collapsed) {
+        if (!MaterialGramSettings.isBottomNavigationEnabled()) {
+            return;
+        }
+        animatorTabsScrollCollapsed.setValue(collapsed, true);
+        applyMaterialGramCollapse(collapsed, true);
+    }
+
+    private androidx.recyclerview.widget.RecyclerView materialGramFindList(View view) {
+        if (view instanceof androidx.recyclerview.widget.RecyclerView) {
+            return (androidx.recyclerview.widget.RecyclerView) view;
+        }
+        if (view instanceof ViewGroup) {
+            final ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                final androidx.recyclerview.widget.RecyclerView found = materialGramFindList(group.getChildAt(i));
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Contacts, Settings and Profile pages: collapse the capsule while their list scrolls down. */
+    private void hookMaterialGramScroll() {
+        for (int a = 0, N = fragmentsArr.size(); a < N; a++) {
+            final BaseFragment fragment = fragmentsArr.valueAt(a).fragment;
+            if (fragment == null || fragment instanceof DialogsActivity || fragment.fragmentView == null) {
+                continue;
+            }
+            if (materialGramScrollHooked.contains(fragment)) {
+                continue;
+            }
+            final androidx.recyclerview.widget.RecyclerView list = materialGramFindList(fragment.fragmentView);
+            if (list == null) {
+                continue;
+            }
+            materialGramScrollHooked.add(fragment);
+            list.addOnScrollListener(new androidx.recyclerview.widget.RecyclerView.OnScrollListener() {
+                @Override
+                public void onScrolled(@NonNull androidx.recyclerview.widget.RecyclerView rv, int dx, int dy) {
+                    if (!MaterialGramSettings.isBottomNavigationEnabled() || getCurrentVisibleFragment() != fragment) {
+                        return;
+                    }
+                    if (!rv.canScrollVertically(-1)) {
+                        materialGramSetCollapsed(false);
+                    } else if (dy > dp(2)) {
+                        materialGramSetCollapsed(true);
+                    } else if (dy < -dp(2)) {
+                        materialGramSetCollapsed(false);
+                    }
+                }
+            });
+        }
+    }
+''',
+        "the MaterialGram capsule width and scroll hook methods"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        '''                animatorTabsScrollCollapsed.setValue(collapsed, true);
+                applyMaterialGramCollapse(collapsed, true);
+            }
+        }
+    }
+''',
+        '''                materialGramSetCollapsed(collapsed);
+            }
+        }
+    }
+''',
+        "the controller collapse delegation"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        '''                blur3_updateFragmentsGlass();
+            }
+
+            @Override
+            protected void dispatchDraw''',
+        '''                blur3_updateFragmentsGlass();
+                hookMaterialGramScroll();
+            }
+
+            @Override
+            protected void dispatchDraw''',
+        "the MaterialGram scroll hook trigger"
     )
     write_text(main_tabs_path, main_tabs)
 
-    # Make the native chat-list scroll listener hide/reveal the capsule by direction.
     dialogs_path = ui_root / "DialogsActivity.java"
     dialogs = read_text(dialogs_path)
     dialogs = replace_once(
@@ -516,15 +682,8 @@ public interface MainTabsActivityController {
         "                    }\n",
         "the chat-list scroll direction handler"
     )
-    dialogs = replace_once(
-        dialogs,
-        "        final boolean mainTabsVisible = !searching && (blurredView == null || blurredView.getBackground() == null || blurredView.getAlpha() < 0.01f || blurredView.getVisibility() == View.GONE);\n",
-        "        final boolean mainTabsVisible = !searching && (blurredView == null || blurredView.getBackground() == null || blurredView.getAlpha() < 0.01f || blurredView.getVisibility() == View.GONE);\n",
-        "the chat-list driven tab visibility condition"
-    )
     write_text(dialogs_path, dialogs)
 
-    # Add Russian base resources; localized resource folders fall back to values/.
     strings_path = UPSTREAM / "TMessagesProj" / "src" / "main" / "res" / "values" / "strings.xml"
     strings = read_text(strings_path)
     additions = [
@@ -532,7 +691,7 @@ public interface MainTabsActivityController {
         ('MaterialGramSettingsInfo', 'Дополнительные настройки интерфейса MaterialGram'),
         ('MaterialGramNavigationHeader', 'Нижняя панель навигации'),
         ('MaterialGramNavigationEnabled', 'Включить панель MaterialGram'),
-        ('MaterialGramNavigationInfo', 'Плавающая панель с активной капсулой. При прокрутке чатов вниз она компактно смещается, оставаясь доступной; при прокрутке вверх возвращается.'),
+        ('MaterialGramNavigationInfo', 'Капсула с кнопкой поиска. При прокрутке чатов вниз она сворачивается до одной вкладки, при прокрутке вверх раскрывается. Если выключить, остаётся обычная панель Telegram.'),
     ]
     for name, value in additions:
         if f'name="{name}"' not in strings:
@@ -572,7 +731,6 @@ def main() -> None:
     if suffix_count != 1 and 'applicationIdSuffix ".beta"' in app_gradle:
         fail("Could not remove the upstream .beta applicationId suffix safely.")
 
-    # Keep the same signer for every MaterialGram APK so updates install in place.
     stable_keystore = 'storeFile file("../TMessagesProj/config/release.keystore")'
     stable_debug_signer = "signingConfig signingConfigs.debug"
     if stable_keystore not in app_gradle or stable_debug_signer not in app_gradle:
