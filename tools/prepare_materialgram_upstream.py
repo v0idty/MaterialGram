@@ -263,6 +263,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
 public interface MainTabsActivityController {
     void setTabsVisible(boolean visible);
     void setTabsScrollCollapsed(boolean collapsed);
+    void onTabsScroll(int dy);
 }
 """)
 
@@ -479,6 +480,11 @@ public interface MainTabsActivityController {
 ''',
         '''    private View materialGramSearchButton;
     private android.animation.ValueAnimator materialGramWidthAnimator;
+    private boolean materialGramCollapsedState;
+    private boolean materialGramLayoutCollapsed;
+    private float materialGramScrollAccum;
+    private long materialGramLastToggle;
+    private Runnable materialGramPendingStep;
     private final java.util.Set<BaseFragment> materialGramScrollHooked =
         java.util.Collections.newSetFromMap(new java.util.WeakHashMap<BaseFragment, Boolean>());
 ''',
@@ -551,10 +557,34 @@ public interface MainTabsActivityController {
         animator.start();
     }
 
+    /** Scroll filter: needs a real swipe in one direction, and never flips faster than every 350 ms. */
+    private void materialGramOnScroll(int dy) {
+        if (dy == 0 || !MaterialGramSettings.isBottomNavigationEnabled()) {
+            return;
+        }
+        if ((dy > 0) != (materialGramScrollAccum > 0)) {
+            materialGramScrollAccum = 0;
+        }
+        materialGramScrollAccum += dy;
+        final boolean wantCollapsed = materialGramScrollAccum > 0;
+        final float needed = wantCollapsed ? dp(36) : dp(20);
+        if (Math.abs(materialGramScrollAccum) < needed || wantCollapsed == materialGramCollapsedState) {
+            return;
+        }
+        final long now = android.os.SystemClock.uptimeMillis();
+        if (now - materialGramLastToggle < 350) {
+            return;
+        }
+        materialGramLastToggle = now;
+        materialGramScrollAccum = 0;
+        materialGramSetCollapsed(wantCollapsed);
+    }
+
     private void materialGramSetCollapsed(boolean collapsed) {
         if (!MaterialGramSettings.isBottomNavigationEnabled()) {
             return;
         }
+        materialGramCollapsedState = collapsed;
         animatorTabsScrollCollapsed.setValue(collapsed, true);
         applyMaterialGramCollapse(collapsed, true);
     }
@@ -598,10 +628,8 @@ public interface MainTabsActivityController {
                     }
                     if (!rv.canScrollVertically(-1)) {
                         materialGramSetCollapsed(false);
-                    } else if (dy > dp(2)) {
-                        materialGramSetCollapsed(true);
-                    } else if (dy < -dp(2)) {
-                        materialGramSetCollapsed(false);
+                    } else {
+                        materialGramOnScroll(dy);
                     }
                 }
             });
@@ -621,6 +649,11 @@ public interface MainTabsActivityController {
         '''                materialGramSetCollapsed(collapsed);
             }
         }
+
+        @Override
+        public void onTabsScroll(int dy) {
+            materialGramOnScroll(dy);
+        }
     }
 ''',
         "the controller collapse delegation"
@@ -639,6 +672,68 @@ public interface MainTabsActivityController {
             @Override
             protected void dispatchDraw''',
         "the MaterialGram scroll hook trigger"
+    )
+
+    # ---- Sequence tabs and capsule width so labels are never squeezed ------
+    main_tabs = replace_once(
+        main_tabs,
+        '''    private void applyMaterialGramCollapse(boolean collapsed, boolean animated) {
+        if (tabsView == null || tabs == null || viewPager == null) {
+            return;
+        }
+''',
+        '''    private void applyMaterialGramCollapse(boolean collapsed, boolean animated) {
+        if (tabsView == null || tabs == null || viewPager == null) {
+            return;
+        }
+        if (materialGramPendingStep != null) {
+            tabsView.removeCallbacks(materialGramPendingStep);
+            materialGramPendingStep = null;
+        }
+        if (!animated || (!collapsed && !materialGramLayoutCollapsed)) {
+            materialGramLayoutCollapsed = collapsed;
+            applyMaterialGramTabs(collapsed, animated);
+            animateMaterialGramCapsuleWidth(collapsed, animated);
+            return;
+        }
+        materialGramLayoutCollapsed = collapsed;
+        if (collapsed) {
+            // other tabs leave first, then the capsule shrinks around the selected one
+            applyMaterialGramTabs(true, true);
+            materialGramPendingStep = () -> {
+                materialGramPendingStep = null;
+                animateMaterialGramCapsuleWidth(true, true);
+            };
+        } else {
+            // the capsule widens first, then the other tabs come back
+            animateMaterialGramCapsuleWidth(false, true);
+            materialGramPendingStep = () -> {
+                materialGramPendingStep = null;
+                applyMaterialGramTabs(false, true);
+            };
+        }
+        tabsView.postDelayed(materialGramPendingStep, 140);
+    }
+
+    private void applyMaterialGramTabs(boolean collapsed, boolean animated) {
+        if (tabsView == null || tabs == null || viewPager == null) {
+            return;
+        }
+''',
+        "the sequenced MaterialGram collapse"
+    )
+    main_tabs = replace_once(
+        main_tabs,
+        '''            tabsView.setViewVisible(tabs[i], exists && (!collapsed || isSelected), animated);
+        }
+        animateMaterialGramCapsuleWidth(collapsed, animated);
+    }
+''',
+        '''            tabsView.setViewVisible(tabs[i], exists && (!collapsed || isSelected), animated);
+        }
+    }
+''',
+        "the tab visibility without width side effect"
     )
     write_text(main_tabs_path, main_tabs)
 
@@ -678,7 +773,7 @@ public interface MainTabsActivityController {
         "                    viewPage.dialogsItemAnimator.onListScroll(-dy);\n",
         "                    viewPage.dialogsItemAnimator.onListScroll(-dy);\n"
         "                    if (dy != 0 && mainTabsActivityController != null && viewPages != null && viewPages.length > 0 && recyclerView == viewPages[0].listView && viewPage.dialogsType == DIALOGS_TYPE_DEFAULT && !searching) {\n"
-        "                        mainTabsActivityController.setTabsScrollCollapsed(dy > 0);\n"
+        "                        mainTabsActivityController.onTabsScroll(dy);\n"
         "                    }\n",
         "the chat-list scroll direction handler"
     )
