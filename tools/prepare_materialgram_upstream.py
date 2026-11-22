@@ -1194,7 +1194,7 @@ public interface MainTabsActivityController {
         dialogs,
         "                    viewPage.dialogsItemAnimator.onListScroll(-dy);\n",
         "                    viewPage.dialogsItemAnimator.onListScroll(-dy);\n"
-        "                    if (dy != 0 && mainTabsActivityController != null && viewPages != null && viewPages.length > 0 && recyclerView == viewPages[0].listView && viewPage.dialogsType == DIALOGS_TYPE_DEFAULT && !searching) {\n"
+        "                    if (dy != 0 && mainTabsActivityController != null && viewPages != null && viewPages.length > 0 && recyclerView == viewPages[0].listView && (viewPage.dialogsType == DIALOGS_TYPE_DEFAULT || viewPage.dialogsType == 7 || viewPage.dialogsType == 8) && !searching) {\n"
         "                        mainTabsActivityController.onTabsScroll(dy);\n"
         "                    }\n",
         "the chat-list scroll direction handler"
@@ -1262,6 +1262,14 @@ def patch_materialgram_avatars() -> None:
         "                    canvas.drawCircle(size / 2.0f, size / 2.0f, size / 2.0f, backgroundPaint);\n"
         "                }\n",
         "the AvatarDrawable circle background"
+    )
+    drawable = replace_once(
+        drawable,
+        "                canvas.drawRoundRect(AndroidUtilities.rectTmp, roundRadius, roundRadius, backgroundPaint);\\n",
+        "                if (!org.telegram.ui.MaterialGramShapes.drawAvatarRoundRect(canvas, AndroidUtilities.rectTmp, roundRadius, backgroundPaint)) {\\n"
+        "                    canvas.drawRoundRect(AndroidUtilities.rectTmp, roundRadius, roundRadius, backgroundPaint);\\n"
+        "                }\\n",
+        "the AvatarDrawable rounded background"
     )
     write_text(drawable_path, drawable)
 
