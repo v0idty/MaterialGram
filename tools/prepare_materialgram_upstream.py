@@ -333,6 +333,7 @@ public interface MainTabsActivityController {
         "        for (int a = 0; a < tabs.length; a++) {\n",
         "    public void selectTab(int position, boolean animated) {\n"
         "        animatorTabsScrollCollapsed.setValue(false, animated);\n"
+        "        applyMaterialGramCollapse(false, animated);\n"
         "        for (int a = 0; a < tabs.length; a++) {\n",
         "the tab selection recovery"
     )
@@ -395,6 +396,20 @@ public interface MainTabsActivityController {
     main_tabs = replace_once(
         main_tabs,
         "    private class MainTabsActivityControllerImpl implements MainTabsActivityController {\n",
+        "    private void applyMaterialGramCollapse(boolean collapsed, boolean animated) {\n"
+        "        if (tabsView == null || tabs == null || viewPager == null) {\n"
+        "            return;\n"
+        "        }\n"
+        "        final int selectedPosition = viewPager.getCurrentPosition();\n"
+        "        final boolean showCallsTab = getUserConfig().showCallsTab;\n"
+        "        for (int i = 0; i < tabs.length; i++) {\n"
+        "            final boolean exists = i != INDEX_SETTINGS || !showCallsTab;\n"
+        "            final boolean callsExists = i != INDEX_CALLS || showCallsTab;\n"
+        "            final boolean selected = indexToPosition(i) == selectedPosition;\n"
+        "            tabsView.setViewVisible(tabs[i], exists && callsExists && (!collapsed || selected), animated);\n"
+        "        }\n"
+        "    }\n"
+        "\n"
         "    public void updateMaterialGramNavigation() {\n"
         "        final boolean enabled = MaterialGramSettings.isBottomNavigationEnabled();\n"
         "        final Runnable refresh = () -> {\n"
@@ -402,6 +417,7 @@ public interface MainTabsActivityController {
         "                return;\n"
         "            }\n"
         "            animatorTabsScrollCollapsed.setValue(false, false);\n"
+        "            applyMaterialGramCollapse(false, false);\n"
         "            if (materialGramSearchButton != null) {\n"
         "                materialGramSearchButton.setVisibility(enabled ? View.VISIBLE : View.GONE);\n"
         "            }\n"
@@ -445,6 +461,7 @@ public interface MainTabsActivityController {
         "        public void setTabsScrollCollapsed(boolean collapsed) {\n"
         "            if (MaterialGramSettings.isBottomNavigationEnabled()) {\n"
         "                animatorTabsScrollCollapsed.setValue(collapsed, true);\n"
+        "                applyMaterialGramCollapse(collapsed, true);\n"
         "            }\n"
         "        }\n"
         "    }\n",
