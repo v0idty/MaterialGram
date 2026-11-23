@@ -79,6 +79,7 @@ public final class MaterialGramSettings {
     private static final String KEY_BOTTOM_NAVIGATION = "bottom_navigation_enabled";
     private static final String KEY_AVATAR_SHAPE = "avatar_shape";
     private static final String KEY_MATERIAL_INPUT = "material_input";
+    private static final String KEY_MATERIAL_VOICE = "material_voice";
     private static volatile int cachedAvatarShape = -1;
 
     private MaterialGramSettings() {
@@ -111,6 +112,19 @@ public final class MaterialGramSettings {
         final SharedPreferences p = prefs();
         if (p != null) {
             p.edit().putBoolean(KEY_MATERIAL_INPUT, enabled).apply();
+        }
+    }
+
+    /** Material You look of the voice recording panel. Off by default. */
+    public static boolean isMaterialVoiceEnabled() {
+        final SharedPreferences p = prefs();
+        return p != null && p.getBoolean(KEY_MATERIAL_VOICE, false);
+    }
+
+    public static void setMaterialVoiceEnabled(boolean enabled) {
+        final SharedPreferences p = prefs();
+        if (p != null) {
+            p.edit().putBoolean(KEY_MATERIAL_VOICE, enabled).apply();
         }
     }
 
@@ -346,6 +360,165 @@ public final class MaterialGramInputStyle {
 }
 """)
 
+    # Voice recording look: morphing blob and live waveform.
+    write_text(ui_root / "MaterialGramVoiceStyle.java", """package org.telegram.ui;
+
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.os.SystemClock;
+
+public final class MaterialGramVoiceStyle {
+    // lobes, amplitude, sharpness of the shapes the blob morphs through
+    private static final float[][] SHAPES = {
+        {9, 0.10f, 1f},
+        {12, 0.16f, 3f},
+        {5, 0.14f, 1.5f},
+        {8, 0.15f, 2f},
+        {4, 0.17f, 1f}
+    };
+    private static final long HOLD_MS = 700;
+    private static final long MORPH_MS = 450;
+    private static final Path BLOB = new Path();
+
+    private MaterialGramVoiceStyle() {
+    }
+
+    private static double radius(float[] shape, double theta, double rotation) {
+        final double bump = Math.pow((1.0 + Math.cos(shape[0] * (theta - rotation))) / 2.0, shape[2]);
+        return 1.0 - shape[1] + shape[1] * bump;
+    }
+
+    /** Draws a blob that slowly rotates and morphs from one shape to the next. Call from onDraw (UI thread). */
+    public static void drawBlob(Canvas canvas, float cx, float cy, float r, Paint paint) {
+        final long now = SystemClock.uptimeMillis();
+        final long cycle = HOLD_MS + MORPH_MS;
+        final int index = (int) ((now / cycle) % SHAPES.length);
+        final int next = (index + 1) % SHAPES.length;
+        final long inCycle = now % cycle;
+        float t = inCycle <= HOLD_MS ? 0f : (inCycle - HOLD_MS) / (float) MORPH_MS;
+        t = t * t * (3f - 2f * t);
+        final double rotation = (now % 6000L) / 6000.0 * Math.PI * 2;
+        final float[] a = SHAPES[index];
+        final float[] b = SHAPES[next];
+
+        BLOB.reset();
+        final int steps = 120;
+        for (int i = 0; i <= steps; i++) {
+            final double theta = Math.PI * 2 * i / steps;
+            final double ra = radius(a, theta, rotation);
+            final double rb = radius(b, theta, rotation);
+            final double rr = r * (ra + (rb - ra) * t);
+            final float x = (float) (cx + rr * Math.cos(theta));
+            final float y = (float) (cy + rr * Math.sin(theta));
+            if (i == 0) {
+                BLOB.moveTo(x, y);
+            } else {
+                BLOB.lineTo(x, y);
+            }
+        }
+        BLOB.close();
+        canvas.drawPath(BLOB, paint);
+    }
+}
+""")
+
+    write_text(ui_root / "MaterialGramWaveView.java", """package org.telegram.ui;
+
+import static org.telegram.messenger.AndroidUtilities.dp;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.os.SystemClock;
+import android.view.View;
+
+import org.telegram.ui.ActionBar.Theme;
+
+/** Live waveform of the voice being recorded. Fed with the amplitude (0..100) Telegram reports. */
+public class MaterialGramWaveView extends View {
+    public interface CancelProvider {
+        float getCancelProgress();
+    }
+
+    private static final int MAX_BARS = 96;
+    private static final long STEP_MS = 90;
+
+    private final float[] levels = new float[MAX_BARS];
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF rect = new RectF();
+    private CancelProvider cancelProvider;
+    private long lastPush;
+    private float smoothed;
+
+    public MaterialGramWaveView(Context context) {
+        super(context);
+    }
+
+    public void setCancelProvider(CancelProvider provider) {
+        cancelProvider = provider;
+    }
+
+    public void reset() {
+        for (int i = 0; i < levels.length; i++) {
+            levels[i] = 0f;
+        }
+        smoothed = 0f;
+        lastPush = SystemClock.uptimeMillis();
+        invalidate();
+    }
+
+    /** amplitude is Telegram's 0..100 level; every call adds one bar. */
+    public void pushAmplitude(float amplitude) {
+        final float v = Math.max(0f, Math.min(1f, amplitude / 100f));
+        smoothed += (v - smoothed) * 0.6f;
+        System.arraycopy(levels, 1, levels, 0, levels.length - 1);
+        levels[levels.length - 1] = smoothed;
+        lastPush = SystemClock.uptimeMillis();
+        invalidate();
+    }
+
+    @Override
+    protected void onVisibilityChanged(View changedView, int visibility) {
+        super.onVisibilityChanged(changedView, visibility);
+        if (visibility == VISIBLE) {
+            reset();
+        }
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        final float w = getWidth();
+        final float h = getHeight();
+        final float cancel = cancelProvider == null ? 0f : Math.max(0f, Math.min(1f, cancelProvider.getCancelProgress()));
+        final float left = dp(112) + (w * 0.62f - dp(112)) * cancel;
+        final float right = w - dp(14);
+        if (right - left < dp(24)) {
+            return;
+        }
+        final float barWidth = dp(3);
+        final float step = dp(6);
+        final int count = Math.min(MAX_BARS, (int) ((right - left) / step));
+        final float shift = Math.min(1f, (SystemClock.uptimeMillis() - lastPush) / (float) STEP_MS) * step;
+        final int accent = Theme.getColor(Theme.key_featuredStickers_addButton);
+        paint.setColor(accent);
+        canvas.save();
+        canvas.clipRect(left, 0, right, h);
+        for (int i = 0; i < count; i++) {
+            final float level = levels[levels.length - 1 - i];
+            final float barHeight = dp(4) + (h - dp(4)) * (float) Math.pow(level, 0.7);
+            final float x = right - barWidth - i * step - shift;
+            paint.setAlpha(i < 3 ? 120 + i * 30 : 235);
+            rect.set(x, (h - barHeight) / 2f, x + barWidth, (h + barHeight) / 2f);
+            canvas.drawRoundRect(rect, barWidth / 2f, barWidth / 2f, paint);
+        }
+        canvas.restore();
+        postInvalidateOnAnimation();
+    }
+}
+""")
+
     # Horizontal shape picker row.
     write_text(ui_root / "MaterialGramShapePickerCell.java", """package org.telegram.ui;
 
@@ -573,6 +746,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     private int avatarInfoRow;
     private int inputHeaderRow;
     private int inputToggleRow;
+    private int voiceToggleRow;
     private int inputInfoRow;
 
     private void updateRows() {
@@ -585,6 +759,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         avatarInfoRow = rowCount++;
         inputHeaderRow = rowCount++;
         inputToggleRow = rowCount++;
+        voiceToggleRow = rowCount++;
         inputInfoRow = rowCount++;
     }
 
@@ -638,6 +813,9 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         } else if (position == inputToggleRow) {
             MaterialGramSettings.setMaterialInputEnabled(!MaterialGramSettings.isMaterialInputEnabled());
             adapter.notifyItemChanged(inputToggleRow);
+        } else if (position == voiceToggleRow) {
+            MaterialGramSettings.setMaterialVoiceEnabled(!MaterialGramSettings.isMaterialVoiceEnabled());
+            adapter.notifyItemChanged(voiceToggleRow);
         }
     }
 
@@ -673,7 +851,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             final int position = holder.getAdapterPosition();
-            return position == navToggleRow || position == inputToggleRow;
+            return position == navToggleRow || position == inputToggleRow || position == voiceToggleRow;
         }
 
         @NonNull
@@ -724,6 +902,12 @@ public class MaterialGramSettingsActivity extends BaseFragment {
                         MaterialGramSettings.isMaterialInputEnabled(),
                         false
                 );
+            } else if (position == voiceToggleRow) {
+                ((TextCheckCell) holder.itemView).setTextAndCheck(
+                        LocaleController.getString(R.string.MaterialGramVoiceStyle),
+                        MaterialGramSettings.isMaterialVoiceEnabled(),
+                        false
+                );
             } else if (position == inputInfoRow) {
                 ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramInputInfo));
             }
@@ -733,7 +917,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         public int getItemViewType(int position) {
             if (position == navHeaderRow || position == avatarHeaderRow || position == inputHeaderRow) {
                 return TYPE_HEADER;
-            } else if (position == navToggleRow || position == inputToggleRow) {
+            } else if (position == navToggleRow || position == inputToggleRow || position == voiceToggleRow) {
                 return TYPE_TOGGLE;
             } else if (position == avatarShapeRow) {
                 return TYPE_SHAPES;
@@ -813,8 +997,7 @@ public interface MainTabsActivityController {
         main_tabs,
         "import android.widget.FrameLayout;\n",
         "import android.widget.FrameLayout;\nimport android.widget.ImageView;\n",
-        "the MainTabsActivity ImageView import"
-    )
+        "the MainTabsActivity ImageView import"    )
     main_tabs = replace_once(
         main_tabs,
         "    private View fadeView;\n",
@@ -997,6 +1180,7 @@ public interface MainTabsActivityController {
         }
         animateMaterialGramCapsuleWidth(collapsed, animated);
     }
+
     /** Collapsed capsule hugs the selected tab; expanded goes back to the full native width. */
     private void animateMaterialGramCapsuleWidth(boolean collapsed, boolean animated) {
         if (tabsView == null || tabsViewWrapper == null) {
@@ -1289,7 +1473,8 @@ public interface MainTabsActivityController {
         ('MaterialGramAvatarsInfo', 'Форма применяется только на этом устройстве и не видна другим людям.'),
         ('MaterialGramInputHeader', 'Панель ввода'),
         ('MaterialGramInputButtons', 'Панель ввода Material You'),
-        ('MaterialGramInputInfo', 'Поле ввода, скрепка и микрофон становятся отдельными элементами со своими формами. Только в обычных чатах: в каналах, у ботов и при редактировании остаётся обычная панель.'),
+        ('MaterialGramVoiceStyle', 'Голосовое Material You'),
+        ('MaterialGramInputInfo', 'Панель: поле ввода, скрепка и микрофон становятся отдельными элементами (только в обычных чатах). Голосовое: вместо красной точки меняющаяся фигура, рядом живая волна звука; подсказка «влево для отмены» скрывается, жест остаётся.'),
         ('MaterialGramShapeCircle', 'Круг'),
         ('MaterialGramShapeRounded', 'Скруглённый'),
         ('MaterialGramShapeSquare', 'Квадрат'),
@@ -1553,6 +1738,82 @@ def patch_materialgram_split_input() -> None:
     print("MaterialGram split input panel was applied.")
 
 
+def patch_materialgram_voice() -> None:
+    """Material You look for the voice recording panel (optional, off by default)."""
+    enter_path = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "ui" / "Components" / "ChatActivityEnterView.java"
+    enter = read_text(enter_path)
+
+    # 1) A morphing blob instead of the blinking red dot.
+    enter = replace_once(
+        enter,
+        "        protected void onDraw(Canvas canvas) {\n"
+        "            if (playing) {\n"
+        "                drawable.setAlpha((int) (255 * alpha));\n"
+        "            }\n"
+        "            redDotPaint.setAlpha((int) (255 * alpha));\n",
+        "        protected void onDraw(Canvas canvas) {\n"
+        "            if (!playing && org.telegram.ui.MaterialGramSettings.isMaterialVoiceEnabled()) {\n"
+        "                redDotPaint.setColor(getThemedColor(Theme.key_featuredStickers_addButton));\n"
+        "                redDotPaint.setAlpha(255);\n"
+        "                org.telegram.ui.MaterialGramVoiceStyle.drawBlob(canvas, getMeasuredWidth() / 2f, getMeasuredHeight() / 2f, dp(11), redDotPaint);\n"
+        "                if (!externalFrameClock) {\n"
+        "                    invalidate();\n"
+        "                }\n"
+        "                return;\n"
+        "            }\n"
+        "            if (playing) {\n"
+        "                drawable.setAlpha((int) (255 * alpha));\n"
+        "            }\n"
+        "            redDotPaint.setAlpha((int) (255 * alpha));\n",
+        "the record dot blob"
+    )
+
+    # 2) Field for the waveform view.
+    enter = replace_once(
+        enter,
+        "    private RLottieImageView recordDeleteImageView;\n",
+        "    private RLottieImageView recordDeleteImageView;\n"
+        "    private org.telegram.ui.MaterialGramWaveView materialGramWave;\n",
+        "the MaterialGram wave field"
+    )
+
+    # 3) The waveform lives in the record panel next to the timer.
+    enter = replace_once(
+        enter,
+        "        recordPanel.addView(recordTimeContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.CENTER_VERTICAL));\n",
+        "        recordPanel.addView(recordTimeContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.CENTER_VERTICAL));\n"
+        "        if (org.telegram.ui.MaterialGramSettings.isMaterialVoiceEnabled()) {\n"
+        "            materialGramWave = new org.telegram.ui.MaterialGramWaveView(getContext());\n"
+        "            materialGramWave.setCancelProvider(() -> slideText != null ? slideText.cancelToProgress : 0f);\n"
+        "            recordPanel.addView(materialGramWave, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 28, Gravity.CENTER_VERTICAL));\n"
+        "        }\n",
+        "the MaterialGram wave view"
+    )
+
+    # 4) Feed it with the amplitude Telegram already reports.
+    enter = replace_once(
+        enter,
+        "                recordCircle.setAmplitude((Double) args[1]);\n",
+        "                recordCircle.setAmplitude((Double) args[1]);\n"
+        "                if (materialGramWave != null) {\n"
+        "                    materialGramWave.pushAmplitude(((Double) args[1]).floatValue());\n"
+        "                }\n",
+        "the MaterialGram wave amplitude feed"
+    )
+
+    # 5) The long "slide to cancel" hint makes room for the waveform; the gesture itself is unchanged.
+    enter = replace_once(
+        enter,
+        "            if (cancelToProgress != 1) {\n"
+        "                int slideDelta =",
+        "            if (cancelToProgress != 1 && !org.telegram.ui.MaterialGramSettings.isMaterialVoiceEnabled()) {\n"
+        "                int slideDelta =",
+        "the slide to cancel hint"
+    )
+    write_text(enter_path, enter)
+    print("MaterialGram voice recording style was applied.")
+
+
 def main() -> None:
     if not UPSTREAM.is_dir():
         fail("Telegram submodule is not checked out. Use actions/checkout with submodules: recursive.")
@@ -1691,6 +1952,7 @@ def main() -> None:
     patch_materialgram_avatars()
     patch_materialgram_input()
     patch_materialgram_split_input()
+    patch_materialgram_voice()
 
     print("MaterialGram branding and package ID applied.")
     print("Telegram API credentials injected into the temporary build checkout (values hidden).")
