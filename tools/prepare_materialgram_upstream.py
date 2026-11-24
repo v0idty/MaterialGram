@@ -80,6 +80,7 @@ public final class MaterialGramSettings {
     private static final String KEY_AVATAR_SHAPE = "avatar_shape";
     private static final String KEY_MATERIAL_INPUT = "material_input";
     private static final String KEY_MATERIAL_VOICE = "material_voice";
+    private static final String KEY_APP_COLOR = "app_color";
     private static volatile int cachedAvatarShape = -1;
 
     private MaterialGramSettings() {
@@ -112,6 +113,20 @@ public final class MaterialGramSettings {
         final SharedPreferences p = prefs();
         if (p != null) {
             p.edit().putBoolean(KEY_MATERIAL_INPUT, enabled).apply();
+        }
+    }
+
+    /** 0 blue (Telegram default), 1 green, 2 pink. */
+    public static int getAppColor() {
+        final SharedPreferences p = prefs();
+        final int value = p == null ? 0 : p.getInt(KEY_APP_COLOR, 0);
+        return value >= 0 && value < MaterialGramThemeColors.COUNT ? value : 0;
+    }
+
+    public static void setAppColor(int color) {
+        final SharedPreferences p = prefs();
+        if (p != null && color >= 0 && color < MaterialGramThemeColors.COUNT) {
+            p.edit().putInt(KEY_APP_COLOR, color).apply();
         }
     }
 
@@ -356,6 +371,199 @@ public final class MaterialGramInputStyle {
         path.addRoundRect(rect, new float[]{small, small, big, big, big, big, small, small}, Path.Direction.CW);
         canvas.drawPath(path, paint);
         return true;
+    }
+}
+""")
+
+    # App colour: picks the matching accent of the light and dark theme and applies it.
+    write_text(ui_root / "MaterialGramThemeColors.java", """package org.telegram.ui;
+
+import android.graphics.Color;
+import android.view.View;
+
+import org.telegram.ui.ActionBar.Theme;
+
+public final class MaterialGramThemeColors {
+    public static final int BLUE = 0;
+    public static final int GREEN = 1;
+    public static final int PINK = 2;
+    public static final int COUNT = 3;
+
+    private static final float[] HUES = {212f, 125f, 335f};
+
+    private MaterialGramThemeColors() {
+    }
+
+    /** Accent of the theme closest to the wanted colour; blue is the theme's own default accent. */
+    private static Theme.ThemeAccent pick(Theme.ThemeInfo theme, int preset) {
+        if (theme == null || theme.themeAccents == null || theme.themeAccents.isEmpty()) {
+            return null;
+        }
+        if (preset == BLUE && theme.themeAccentsMap != null) {
+            Theme.ThemeAccent def = theme.themeAccentsMap.get(Theme.DEFALT_THEME_ACCENT_ID);
+            if (def == null) {
+                def = theme.themeAccentsMap.get(0);
+            }
+            if (def != null) {
+                return def;
+            }
+        }
+        Theme.ThemeAccent best = null;
+        float bestDistance = 1000f;
+        final float[] hsv = new float[3];
+        for (Theme.ThemeAccent accent : theme.themeAccents) {
+            Color.colorToHSV(accent.accentColor, hsv);
+            if (hsv[1] < 0.3f || hsv[2] < 0.3f) {
+                continue;
+            }
+            float distance = Math.abs(hsv[0] - HUES[preset]);
+            distance = Math.min(distance, 360f - distance);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = accent;
+            }
+        }
+        return best;
+    }
+
+    private static void applyTo(Theme.ThemeInfo theme, boolean night, int preset, boolean active, View from) {
+        final Theme.ThemeAccent accent = pick(theme, preset);
+        if (accent == null || theme.currentAccentId == accent.id) {
+            return;
+        }
+        if (active) {
+            Theme.switchThemeWithReveal(theme, night, accent.id, from);
+        } else {
+            theme.setCurrentAccentId(accent.id);
+            Theme.saveThemeAccents(theme, true, false, true, false);
+        }
+    }
+
+    /** Both the light and the dark theme get the colour, so day/night switching stays consistent. */
+    public static void apply(int preset, View from) {
+        if (preset < 0 || preset >= COUNT) {
+            return;
+        }
+        final Theme.ThemeInfo day = Theme.getCurrentTheme();
+        final Theme.ThemeInfo night = Theme.getCurrentNightTheme();
+        final boolean nightActive = Theme.isCurrentThemeNight();
+        if (day == night) {
+            applyTo(day, nightActive, preset, true, from);
+            return;
+        }
+        applyTo(day, false, preset, !nightActive, from);
+        applyTo(night, true, preset, nightActive, from);
+    }
+}
+""")
+
+    write_text(ui_root / "MaterialGramColorPickerCell.java", """package org.telegram.ui;
+
+import static org.telegram.messenger.AndroidUtilities.dp;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.view.View;
+import android.widget.LinearLayout;
+
+import androidx.core.graphics.ColorUtils;
+
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.R;
+import org.telegram.ui.ActionBar.Theme;
+
+public class MaterialGramColorPickerCell extends LinearLayout {
+    public interface Listener {
+        void onColorSelected(int preset, View view);
+    }
+
+    private static final int[] COLORS = {0xFF3B82F6, 0xFF34A853, 0xFFEC6FA5};
+    private static final int[] NAMES = {
+        R.string.MaterialGramColorBlue,
+        R.string.MaterialGramColorGreen,
+        R.string.MaterialGramColorPink
+    };
+
+    private final ColorItemView[] items = new ColorItemView[MaterialGramThemeColors.COUNT];
+    private Listener listener;
+
+    public MaterialGramColorPickerCell(Context context) {
+        super(context);
+        setOrientation(HORIZONTAL);
+        setPadding(dp(8), dp(8), dp(8), dp(8));
+        for (int i = 0; i < items.length; i++) {
+            final int preset = i;
+            items[i] = new ColorItemView(context, COLORS[i], LocaleController.getString(NAMES[i]));
+            items[i].setOnClickListener(v -> {
+                setSelected(preset);
+                if (listener != null) {
+                    listener.onColorSelected(preset, v);
+                }
+            });
+            addView(items[i], new LinearLayout.LayoutParams(0, dp(100), 1f));
+        }
+    }
+
+    public void setListener(Listener listener) {
+        this.listener = listener;
+    }
+
+    public void setSelected(int preset) {
+        for (int i = 0; i < items.length; i++) {
+            items[i].setPicked(i == preset);
+        }
+    }
+
+    private static class ColorItemView extends View {
+        private final int color;
+        private final String label;
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF rect = new RectF();
+        private boolean picked;
+
+        ColorItemView(Context context, int color, String label) {
+            super(context);
+            this.color = color;
+            this.label = label;
+            ring.setStyle(Paint.Style.STROKE);
+            ring.setStrokeWidth(dp(3));
+            text.setTextSize(dp(13));
+            text.setTypeface(AndroidUtilities.bold());
+            text.setTextAlign(Paint.Align.CENTER);
+        }
+
+        void setPicked(boolean picked) {
+            if (this.picked != picked) {
+                this.picked = picked;
+                invalidate();
+            }
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            final float w = getWidth();
+            final float h = getHeight();
+            if (picked) {
+                fill.setColor(ColorUtils.setAlphaComponent(color, 40));
+                rect.set(dp(6), dp(2), w - dp(6), h - dp(2));
+                canvas.drawRoundRect(rect, dp(26), dp(26), fill);
+            }
+            final float cx = w / 2f;
+            final float cy = dp(38);
+            fill.setColor(color);
+            canvas.drawCircle(cx, cy, dp(22), fill);
+            if (picked) {
+                ring.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                canvas.drawCircle(cx, cy, dp(27), ring);
+            }
+            text.setColor(Theme.getColor(picked ? Theme.key_windowBackgroundWhiteBlackText : Theme.key_windowBackgroundWhiteGrayText2));
+            canvas.drawText(label, cx, dp(84), text);
+        }
     }
 }
 """)
@@ -731,6 +939,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     private static final int TYPE_TOGGLE = 1;
     private static final int TYPE_INFO = 2;
     private static final int TYPE_SHAPES = 3;
+    private static final int TYPE_COLORS = 4;
 
     private RecyclerListView listView;
     private ListAdapter adapter;
@@ -747,6 +956,9 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     private int inputHeaderRow;
     private int inputToggleRow;
     private int voiceToggleRow;
+    private int colorHeaderRow;
+    private int colorPickerRow;
+    private int colorInfoRow;
     private int inputInfoRow;
 
     private void updateRows() {
@@ -761,6 +973,9 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         inputToggleRow = rowCount++;
         voiceToggleRow = rowCount++;
         inputInfoRow = rowCount++;
+        colorHeaderRow = rowCount++;
+        colorPickerRow = rowCount++;
+        colorInfoRow = rowCount++;
     }
 
     @Override
@@ -819,6 +1034,11 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         }
     }
 
+    private void onColorSelected(int preset, View view) {
+        MaterialGramSettings.setAppColor(preset);
+        MaterialGramThemeColors.apply(preset, view);
+    }
+
     private void onShapeSelected(int shape) {
         MaterialGramSettings.setAvatarShape(shape);
         NotificationCenter.getInstance(currentAccount).postNotificationName(
@@ -862,6 +1082,10 @@ public class MaterialGramSettingsActivity extends BaseFragment {
                 view = new HeaderCell(context);
             } else if (viewType == TYPE_TOGGLE) {
                 view = new TextCheckCell(context);
+            } else if (viewType == TYPE_COLORS) {
+                final MaterialGramColorPickerCell cell = new MaterialGramColorPickerCell(context);
+                cell.setListener(MaterialGramSettingsActivity.this::onColorSelected);
+                view = cell;
             } else if (viewType == TYPE_SHAPES) {
                 final MaterialGramShapePickerCell cell = new MaterialGramShapePickerCell(context);
                 cell.setListener(MaterialGramSettingsActivity.this::onShapeSelected);
@@ -902,6 +1126,12 @@ public class MaterialGramSettingsActivity extends BaseFragment {
                         MaterialGramSettings.isMaterialInputEnabled(),
                         false
                 );
+            } else if (position == colorHeaderRow) {
+                ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramColorHeader));
+            } else if (position == colorPickerRow) {
+                ((MaterialGramColorPickerCell) holder.itemView).setSelected(MaterialGramSettings.getAppColor());
+            } else if (position == colorInfoRow) {
+                ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramColorInfo));
             } else if (position == voiceToggleRow) {
                 ((TextCheckCell) holder.itemView).setTextAndCheck(
                         LocaleController.getString(R.string.MaterialGramVoiceStyle),
@@ -915,10 +1145,12 @@ public class MaterialGramSettingsActivity extends BaseFragment {
 
         @Override
         public int getItemViewType(int position) {
-            if (position == navHeaderRow || position == avatarHeaderRow || position == inputHeaderRow) {
+            if (position == navHeaderRow || position == avatarHeaderRow || position == inputHeaderRow || position == colorHeaderRow) {
                 return TYPE_HEADER;
             } else if (position == navToggleRow || position == inputToggleRow || position == voiceToggleRow) {
                 return TYPE_TOGGLE;
+            } else if (position == colorPickerRow) {
+                return TYPE_COLORS;
             } else if (position == avatarShapeRow) {
                 return TYPE_SHAPES;
             }
@@ -997,7 +1229,8 @@ public interface MainTabsActivityController {
         main_tabs,
         "import android.widget.FrameLayout;\n",
         "import android.widget.FrameLayout;\nimport android.widget.ImageView;\n",
-        "the MainTabsActivity ImageView import"    )
+        "the MainTabsActivity ImageView import"
+    )
     main_tabs = replace_once(
         main_tabs,
         "    private View fadeView;\n",
@@ -1473,6 +1706,11 @@ public interface MainTabsActivityController {
         ('MaterialGramAvatarsInfo', 'Форма применяется только на этом устройстве и не видна другим людям.'),
         ('MaterialGramInputHeader', 'Панель ввода'),
         ('MaterialGramInputButtons', 'Панель ввода Material You'),
+        ('MaterialGramColorHeader', 'Цвет приложения'),
+        ('MaterialGramColorBlue', 'Синий'),
+        ('MaterialGramColorGreen', 'Зелёный'),
+        ('MaterialGramColorPink', 'Розовый'),
+        ('MaterialGramColorInfo', 'Цвет применяется к светлой и тёмной теме сразу. Если у тебя своя тема, цвет может не поменяться.'),
         ('MaterialGramVoiceStyle', 'Голосовое Material You'),
         ('MaterialGramInputInfo', 'Панель: поле ввода, скрепка и микрофон становятся отдельными элементами (только в обычных чатах). Голосовое: вместо красной точки меняющаяся фигура, рядом живая волна звука; подсказка «влево для отмены» скрывается, жест остаётся.'),
         ('MaterialGramShapeCircle', 'Круг'),
