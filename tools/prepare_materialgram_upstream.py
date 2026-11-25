@@ -66,6 +66,42 @@ def patch_materialgram_features() -> None:
     """
     ui_root = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "ui"
 
+    # Own icons for the MaterialGram settings (tinted with the accent colour by the cells).
+    drawable_dir = UPSTREAM / "TMessagesProj" / "src" / "main" / "res" / "drawable"
+    drawable_dir.mkdir(parents=True, exist_ok=True)
+
+    def vector(name: str, path_data: str, viewport: int = 24, even_odd: bool = True) -> None:
+        fill_type = '\n        android:fillType="evenOdd"' if even_odd else ""
+        write_text(drawable_dir / f"{name}.xml", f"""<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="{viewport}"
+    android:viewportHeight="{viewport}">
+    <path
+        android:fillColor="#FFFFFFFF"{fill_type}
+        android:pathData="{path_data}" />
+</vector>
+""")
+
+    # palette
+    vector("mg_icon_appearance",
+           "M12,3C7.03,3 3,7.03 3,12s4.03,9 9,9c0.83,0 1.5,-0.67 1.5,-1.5 0,-0.39 -0.15,-0.74 -0.39,-1.01 -0.23,-0.26 -0.38,-0.61 -0.38,-0.99 0,-0.83 0.67,-1.5 1.5,-1.5L16,16c2.76,0 5,-2.24 5,-5 0,-4.42 -4.03,-8 -9,-8zM6.5,12c-0.83,0 -1.5,-0.67 -1.5,-1.5S5.67,9 6.5,9 8,9.67 8,10.5 7.33,12 6.5,12zM9.5,8C8.67,8 8,7.33 8,6.5S8.67,5 9.5,5s1.5,0.67 1.5,1.5S10.33,8 9.5,8zM14.5,8c-0.83,0 -1.5,-0.67 -1.5,-1.5S13.67,5 14.5,5s1.5,0.67 1.5,1.5S15.33,8 14.5,8zM17.5,12c-0.83,0 -1.5,-0.67 -1.5,-1.5S16.67,9 17.5,9s1.5,0.67 1.5,1.5 -0.67,1.5 -1.5,1.5z")
+    # chat bubble with lines
+    vector("mg_icon_chats",
+           "M20,2L4,2c-1.1,0 -2,0.9 -2,2v18l4,-4h14c1.1,0 2,-0.9 2,-2L22,4c0,-1.1 -0.9,-2 -2,-2zM18,14L6,14v-2h12v2zM18,11L6,11L6,9h12v2zM18,8L6,8L6,6h12v2z")
+    # lock
+    vector("mg_icon_privacy",
+           "M18,8h-1L17,6c0,-2.76 -2.24,-5 -5,-5S7,3.24 7,6v2L6,8c-1.1,0 -2,0.9 -2,2v10c0,1.1 0.9,2 2,2h12c1.1,0 2,-0.9 2,-2L20,10c0,-1.1 -0.9,-2 -2,-2zM12,17c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2 2,0.9 2,2 -0.9,2 -2,2zM15.1,8L8.9,8L8.9,6c0,-1.71 1.39,-3.1 3.1,-3.1 1.71,0 3.1,1.39 3.1,3.1v2z")
+    # code brackets
+    vector("mg_icon_source",
+           "M9.4,16.6L4.8,12l4.6,-4.6L8,6l-6,6 6,6 1.4,-1.4zM14.6,16.6l4.6,-4.6 -4.6,-4.6L16,6l6,6 -6,6 -1.4,-1.4z",
+           even_odd=False)
+    # MaterialGram paper plane (same shape as the app icon, without its background)
+    vector("mg_icon_main",
+           "M18.4,47.3L84.1,19.6C88.3,17.9 92.1,21.7 90.4,25.9L63.2,89.5C61.4,93.7 55.4,94 53.2,89.9L41.4,68.4L20.2,56.8C16.1,54.6 14.2,49.1 18.4,47.3Z",
+           viewport=108, even_odd=False)
+
     settings_helper = ui_root / "MaterialGramSettings.java"
     write_text(settings_helper, """package org.telegram.ui;
 
@@ -81,6 +117,7 @@ public final class MaterialGramSettings {
     private static final String KEY_MATERIAL_INPUT = "material_input";
     private static final String KEY_MATERIAL_VOICE = "material_voice";
     private static final String KEY_APP_COLOR = "app_color";
+    private static final String KEY_SCREENSHOT_MODE = "screenshot_mode";
     private static volatile int cachedAvatarShape = -1;
 
     private MaterialGramSettings() {
@@ -113,6 +150,19 @@ public final class MaterialGramSettings {
         final SharedPreferences p = prefs();
         if (p != null) {
             p.edit().putBoolean(KEY_MATERIAL_INPUT, enabled).apply();
+        }
+    }
+
+    /** Hides the phone number and username on screen (for screenshots). Display only. */
+    public static boolean isScreenshotModeEnabled() {
+        final SharedPreferences p = prefs();
+        return p != null && p.getBoolean(KEY_SCREENSHOT_MODE, false);
+    }
+
+    public static void setScreenshotModeEnabled(boolean enabled) {
+        final SharedPreferences p = prefs();
+        if (p != null) {
+            p.edit().putBoolean(KEY_SCREENSHOT_MODE, enabled).apply();
         }
     }
 
@@ -371,6 +421,45 @@ public final class MaterialGramInputStyle {
         path.addRoundRect(rect, new float[]{small, small, big, big, big, big, small, small}, Path.Direction.CW);
         canvas.drawPath(path, paint);
         return true;
+    }
+}
+""")
+
+    # Screenshot mode: masks phone and username where they are shown.
+    write_text(ui_root / "MaterialGramPrivacy.java", """package org.telegram.ui;
+
+public final class MaterialGramPrivacy {
+    private MaterialGramPrivacy() {
+    }
+
+    /** "+7 (978) 740-16-36" becomes "+7 (•••) •••-••-••": the country code stays, digits go. */
+    public static String phone(String formatted) {
+        if (formatted == null || !MaterialGramSettings.isScreenshotModeEnabled()) {
+            return formatted;
+        }
+        final StringBuilder out = new StringBuilder(formatted.length());
+        int kept = 0;
+        for (int i = 0; i < formatted.length(); i++) {
+            final char c = formatted.charAt(i);
+            if (Character.isDigit(c)) {
+                if (kept < 1) {
+                    out.append(c);
+                    kept++;
+                } else {
+                    out.append('\u2022');
+                }
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    public static String username(String username) {
+        if (username == null || !MaterialGramSettings.isScreenshotModeEnabled()) {
+            return username;
+        }
+        return "\u2022\u2022\u2022\u2022\u2022\u2022";
     }
 }
 """)
@@ -908,7 +997,229 @@ public class MaterialGramShapePickerCell extends FrameLayout {
 }
 """)
 
-    # MaterialGram settings page. Every group is a block of rows built in updateRows().
+    # MaterialGram settings: a hub with categories (like exteraGram) and one page per category.
+    write_text(ui_root / "MaterialGramCategoryCell.java", """package org.telegram.ui;
+
+import static org.telegram.messenger.AndroidUtilities.dp;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.drawable.Drawable;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+
+import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
+
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LayoutHelper;
+
+/** A settings row: Material You shaped icon badge, title, optional value and chevron. */
+public class MaterialGramCategoryCell extends FrameLayout {
+    private final BadgeView badge;
+    private final TextView titleView;
+    private final TextView valueView;
+    private final Paint dividerPaint = new Paint();
+    private boolean divider;
+    private boolean chevron;
+
+    public MaterialGramCategoryCell(Context context) {
+        super(context);
+        setWillNotDraw(false);
+
+        badge = new BadgeView(context);
+        addView(badge, LayoutHelper.createFrame(44, 44, Gravity.LEFT | Gravity.CENTER_VERTICAL, 18, 0, 0, 0));
+
+        titleView = new TextView(context);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 17);
+        titleView.setSingleLine(true);
+        addView(titleView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.CENTER_VERTICAL, 78, 0, 110, 0));
+
+        valueView = new TextView(context);
+        valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        valueView.setSingleLine(true);
+        addView(valueView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.RIGHT | Gravity.CENTER_VERTICAL, 0, 0, 20, 0));
+    }
+
+    public void set(String title, String value, int iconRes, int shape, boolean chevron, boolean divider) {
+        titleView.setText(title);
+        valueView.setText(value == null ? "" : value);
+        this.divider = divider;
+        this.chevron = chevron;
+        badge.set(iconRes, shape);
+        updateColors();
+        invalidate();
+    }
+
+    public void updateColors() {
+        titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        valueView.setTextColor(Theme.getColor(Theme.key_featuredStickers_addButton));
+        dividerPaint.setColor(Theme.getColor(Theme.key_divider));
+        badge.invalidate();
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(dp(64), MeasureSpec.EXACTLY));
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        updateColors();
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        if (divider) {
+            canvas.drawRect(dp(78), getHeight() - 1, getWidth(), getHeight(), dividerPaint);
+        }
+        if (chevron) {
+            final float cx = getWidth() - dp(26);
+            final float cy = getHeight() / 2f;
+            dividerPaint.setStyle(Paint.Style.STROKE);
+            dividerPaint.setStrokeWidth(dp(2));
+            dividerPaint.setStrokeCap(Paint.Cap.ROUND);
+            dividerPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+            canvas.drawLine(cx - dp(3), cy - dp(6), cx + dp(3), cy, dividerPaint);
+            canvas.drawLine(cx + dp(3), cy, cx - dp(3), cy + dp(6), dividerPaint);
+            dividerPaint.setStyle(Paint.Style.FILL);
+            dividerPaint.setColor(Theme.getColor(Theme.key_divider));
+        }
+    }
+
+    private static class BadgeView extends View {
+        private final Path path = new Path();
+        private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private Drawable icon;
+        private int shape = MaterialGramShapes.COOKIE;
+
+        BadgeView(Context context) {
+            super(context);
+        }
+
+        void set(int iconRes, int shape) {
+            this.shape = shape;
+            icon = iconRes == 0 ? null : ContextCompat.getDrawable(getContext(), iconRes);
+            if (icon != null) {
+                icon = icon.mutate();
+            }
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            final int accent = Theme.getColor(Theme.key_featuredStickers_addButton);
+            final float size = Math.min(getWidth(), getHeight());
+            MaterialGramShapes.fillPath(path, shape, 0, 0, size);
+            fill.setColor(ColorUtils.setAlphaComponent(accent, 46));
+            canvas.drawPath(path, fill);
+            if (icon != null) {
+                final int s = dp(24);
+                final int l = (int) ((getWidth() - s) / 2f);
+                final int t = (int) ((getHeight() - s) / 2f);
+                icon.setBounds(l, t, l + s, t + s);
+                icon.setColorFilter(new android.graphics.PorterDuffColorFilter(accent, android.graphics.PorterDuff.Mode.SRC_IN));
+                icon.draw(canvas);
+            }
+        }
+    }
+}
+""")
+
+    write_text(ui_root / "MaterialGramHubHeaderCell.java", """package org.telegram.ui;
+
+import static org.telegram.messenger.AndroidUtilities.dp;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Path;
+import android.graphics.drawable.Drawable;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+
+import androidx.core.content.ContextCompat;
+
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.BuildConfig;
+import org.telegram.messenger.R;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LayoutHelper;
+
+/** Logo in a cookie shape, name and version at the top of the MaterialGram hub. */
+public class MaterialGramHubHeaderCell extends FrameLayout {
+    private final LogoView logo;
+    private final TextView nameView;
+    private final TextView versionView;
+
+    public MaterialGramHubHeaderCell(Context context) {
+        super(context);
+        logo = new LogoView(context);
+        addView(logo, LayoutHelper.createFrame(104, 104, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 14, 0, 0));
+
+        nameView = new TextView(context);
+        nameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 26);
+        nameView.setTypeface(AndroidUtilities.bold());
+        nameView.setText("MaterialGram");
+        addView(nameView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 128, 0, 0));
+
+        versionView = new TextView(context);
+        versionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        versionView.setText(BuildConfig.VERSION_NAME);
+        addView(versionView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.CENTER_HORIZONTAL, 0, 166, 0, 0));
+        updateColors();
+    }
+
+    public void updateColors() {
+        nameView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        versionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(dp(206), MeasureSpec.EXACTLY));
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        updateColors();
+    }
+
+    private static class LogoView extends View {
+        private final Path path = new Path();
+        private final Drawable icon;
+
+        LogoView(Context context) {
+            super(context);
+            icon = ContextCompat.getDrawable(context, R.drawable.ic_materialgram_icon);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            final float size = Math.min(getWidth(), getHeight());
+            MaterialGramShapes.fillPath(path, MaterialGramShapes.COOKIE, 0, 0, size);
+            canvas.save();
+            canvas.clipPath(path);
+            if (icon != null) {
+                icon.setBounds(0, 0, (int) size, (int) size);
+                icon.draw(canvas);
+            }
+            canvas.restore();
+        }
+    }
+}
+""")
+
     settings_screen = ui_root / "MaterialGramSettingsActivity.java"
     write_text(settings_screen, """package org.telegram.ui;
 
@@ -925,6 +1236,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.INavigationLayout;
@@ -934,48 +1246,98 @@ import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 
+import java.util.ArrayList;
+
 public class MaterialGramSettingsActivity extends BaseFragment {
+    public static final int PAGE_HUB = 0;
+    public static final int PAGE_APPEARANCE = 1;
+    public static final int PAGE_CHATS = 2;
+    public static final int PAGE_PRIVACY = 3;
+
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_TOGGLE = 1;
     private static final int TYPE_INFO = 2;
     private static final int TYPE_SHAPES = 3;
     private static final int TYPE_COLORS = 4;
+    private static final int TYPE_CATEGORY = 5;
+    private static final int TYPE_HUB = 6;
 
+    // Row ids. To add a setting: add an id, put it into a page in updateRows(), handle it in the adapter.
+    private static final int ROW_HUB = 1;
+    private static final int ROW_CATEGORIES_HEADER = 2;
+    private static final int ROW_CAT_APPEARANCE = 3;
+    private static final int ROW_CAT_CHATS = 4;
+    private static final int ROW_CAT_PRIVACY = 5;
+    private static final int ROW_LINKS_HEADER = 6;
+    private static final int ROW_LINK_SOURCE = 7;
+    private static final int ROW_NAV_HEADER = 10;
+    private static final int ROW_NAV_TOGGLE = 11;
+    private static final int ROW_NAV_INFO = 12;
+    private static final int ROW_AVATAR_HEADER = 13;
+    private static final int ROW_AVATAR_SHAPES = 14;
+    private static final int ROW_AVATAR_INFO = 15;
+    private static final int ROW_COLOR_HEADER = 16;
+    private static final int ROW_COLOR_PICKER = 17;
+    private static final int ROW_COLOR_INFO = 18;
+    private static final int ROW_INPUT_TOGGLE = 20;
+    private static final int ROW_VOICE_TOGGLE = 21;
+    private static final int ROW_INPUT_INFO = 22;
+    private static final int ROW_PRIVACY_TOGGLE = 30;
+    private static final int ROW_PRIVACY_INFO = 31;
+
+    private final int page;
+    private final ArrayList<Integer> rows = new ArrayList<>();
     private RecyclerListView listView;
     private ListAdapter adapter;
 
-    // To add a setting: declare a row id here, give it a position in updateRows(),
-    // then handle it in getItemViewType / onBindViewHolder / onRowClicked.
-    private int rowCount;
-    private int navHeaderRow;
-    private int navToggleRow;
-    private int navInfoRow;
-    private int avatarHeaderRow;
-    private int avatarShapeRow;
-    private int avatarInfoRow;
-    private int inputHeaderRow;
-    private int inputToggleRow;
-    private int voiceToggleRow;
-    private int colorHeaderRow;
-    private int colorPickerRow;
-    private int colorInfoRow;
-    private int inputInfoRow;
+    public MaterialGramSettingsActivity() {
+        this(PAGE_HUB);
+    }
+
+    public MaterialGramSettingsActivity(int page) {
+        super();
+        this.page = page;
+    }
 
     private void updateRows() {
-        rowCount = 0;
-        navHeaderRow = rowCount++;
-        navToggleRow = rowCount++;
-        navInfoRow = rowCount++;
-        avatarHeaderRow = rowCount++;
-        avatarShapeRow = rowCount++;
-        avatarInfoRow = rowCount++;
-        inputHeaderRow = rowCount++;
-        inputToggleRow = rowCount++;
-        voiceToggleRow = rowCount++;
-        inputInfoRow = rowCount++;
-        colorHeaderRow = rowCount++;
-        colorPickerRow = rowCount++;
-        colorInfoRow = rowCount++;
+        rows.clear();
+        if (page == PAGE_APPEARANCE) {
+            rows.add(ROW_NAV_HEADER);
+            rows.add(ROW_NAV_TOGGLE);
+            rows.add(ROW_NAV_INFO);
+            rows.add(ROW_AVATAR_HEADER);
+            rows.add(ROW_AVATAR_SHAPES);
+            rows.add(ROW_AVATAR_INFO);
+            rows.add(ROW_COLOR_HEADER);
+            rows.add(ROW_COLOR_PICKER);
+            rows.add(ROW_COLOR_INFO);
+        } else if (page == PAGE_CHATS) {
+            rows.add(ROW_INPUT_TOGGLE);
+            rows.add(ROW_VOICE_TOGGLE);
+            rows.add(ROW_INPUT_INFO);
+        } else if (page == PAGE_PRIVACY) {
+            rows.add(ROW_PRIVACY_TOGGLE);
+            rows.add(ROW_PRIVACY_INFO);
+        } else {
+            rows.add(ROW_HUB);
+            rows.add(ROW_CATEGORIES_HEADER);
+            rows.add(ROW_CAT_APPEARANCE);
+            rows.add(ROW_CAT_CHATS);
+            rows.add(ROW_CAT_PRIVACY);
+            rows.add(ROW_LINKS_HEADER);
+            rows.add(ROW_LINK_SOURCE);
+        }
+    }
+
+    private String pageTitle() {
+        if (page == PAGE_APPEARANCE) {
+            return LocaleController.getString(R.string.MaterialGramCatAppearance);
+        } else if (page == PAGE_CHATS) {
+            return LocaleController.getString(R.string.MaterialGramCatChats);
+        } else if (page == PAGE_PRIVACY) {
+            return LocaleController.getString(R.string.MaterialGramCatPrivacy);
+        }
+        return LocaleController.getString(R.string.MaterialGramSettings);
     }
 
     @Override
@@ -993,7 +1355,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     public View createView(Context context) {
         setHasOwnBackground(true);
         simpleActionBar.setBackButtonImage(R.drawable.ic_ab_back);
-        simpleActionBar.setTitle(LocaleController.getString(R.string.MaterialGramSettings));
+        simpleActionBar.setTitle(pageTitle());
         simpleActionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
@@ -1021,16 +1383,28 @@ public class MaterialGramSettingsActivity extends BaseFragment {
     }
 
     private void onRowClicked(int position) {
-        if (position == navToggleRow) {
+        final int id = rows.get(position);
+        if (id == ROW_CAT_APPEARANCE) {
+            presentFragment(new MaterialGramSettingsActivity(PAGE_APPEARANCE));
+        } else if (id == ROW_CAT_CHATS) {
+            presentFragment(new MaterialGramSettingsActivity(PAGE_CHATS));
+        } else if (id == ROW_CAT_PRIVACY) {
+            presentFragment(new MaterialGramSettingsActivity(PAGE_PRIVACY));
+        } else if (id == ROW_LINK_SOURCE) {
+            Browser.openUrl(getParentActivity(), "https://github.com/v0idty/MaterialGram");
+        } else if (id == ROW_NAV_TOGGLE) {
             MaterialGramSettings.setBottomNavigationEnabled(!MaterialGramSettings.isBottomNavigationEnabled());
-            adapter.notifyItemChanged(navToggleRow);
+            adapter.notifyItemChanged(position);
             updateMainTabs();
-        } else if (position == inputToggleRow) {
+        } else if (id == ROW_INPUT_TOGGLE) {
             MaterialGramSettings.setMaterialInputEnabled(!MaterialGramSettings.isMaterialInputEnabled());
-            adapter.notifyItemChanged(inputToggleRow);
-        } else if (position == voiceToggleRow) {
+            adapter.notifyItemChanged(position);
+        } else if (id == ROW_VOICE_TOGGLE) {
             MaterialGramSettings.setMaterialVoiceEnabled(!MaterialGramSettings.isMaterialVoiceEnabled());
-            adapter.notifyItemChanged(voiceToggleRow);
+            adapter.notifyItemChanged(position);
+        } else if (id == ROW_PRIVACY_TOGGLE) {
+            MaterialGramSettings.setScreenshotModeEnabled(!MaterialGramSettings.isScreenshotModeEnabled());
+            adapter.notifyItemChanged(position);
         }
     }
 
@@ -1065,13 +1439,18 @@ public class MaterialGramSettingsActivity extends BaseFragment {
 
         @Override
         public int getItemCount() {
-            return rowCount;
+            return rows.size();
         }
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             final int position = holder.getAdapterPosition();
-            return position == navToggleRow || position == inputToggleRow || position == voiceToggleRow;
+            if (position < 0 || position >= rows.size()) {
+                return false;
+            }
+            final int id = rows.get(position);
+            return id == ROW_NAV_TOGGLE || id == ROW_INPUT_TOGGLE || id == ROW_VOICE_TOGGLE || id == ROW_PRIVACY_TOGGLE
+                    || id == ROW_CAT_APPEARANCE || id == ROW_CAT_CHATS || id == ROW_CAT_PRIVACY || id == ROW_LINK_SOURCE;
         }
 
         @NonNull
@@ -1082,6 +1461,10 @@ public class MaterialGramSettingsActivity extends BaseFragment {
                 view = new HeaderCell(context);
             } else if (viewType == TYPE_TOGGLE) {
                 view = new TextCheckCell(context);
+            } else if (viewType == TYPE_HUB) {
+                view = new MaterialGramHubHeaderCell(context);
+            } else if (viewType == TYPE_CATEGORY) {
+                view = new MaterialGramCategoryCell(context);
             } else if (viewType == TYPE_COLORS) {
                 final MaterialGramColorPickerCell cell = new MaterialGramColorPickerCell(context);
                 cell.setListener(MaterialGramSettingsActivity.this::onColorSelected);
@@ -1100,61 +1483,84 @@ public class MaterialGramSettingsActivity extends BaseFragment {
             return new RecyclerListView.Holder(view);
         }
 
+        private void toggle(RecyclerView.ViewHolder holder, int title, boolean checked) {
+            ((TextCheckCell) holder.itemView).setTextAndCheck(LocaleController.getString(title), checked, false);
+        }
+
+        private void header(RecyclerView.ViewHolder holder, int text) {
+            ((HeaderCell) holder.itemView).setText(LocaleController.getString(text));
+        }
+
+        private void info(RecyclerView.ViewHolder holder, int text) {
+            ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(text));
+        }
+
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-            if (position == navHeaderRow) {
-                ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramNavigationHeader));
-            } else if (position == avatarHeaderRow) {
-                ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramAvatarsHeader));
-            } else if (position == navToggleRow) {
-                ((TextCheckCell) holder.itemView).setTextAndCheck(
-                        LocaleController.getString(R.string.MaterialGramNavigationEnabled),
-                        MaterialGramSettings.isBottomNavigationEnabled(),
-                        false
-                );
-            } else if (position == avatarShapeRow) {
-                ((MaterialGramShapePickerCell) holder.itemView).setSelected(MaterialGramSettings.getAvatarShape(), false);
-            } else if (position == navInfoRow) {
-                ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramNavigationInfo));
-            } else if (position == avatarInfoRow) {
-                ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramAvatarsInfo));
-            } else if (position == inputHeaderRow) {
-                ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramInputHeader));
-            } else if (position == inputToggleRow) {
-                ((TextCheckCell) holder.itemView).setTextAndCheck(
-                        LocaleController.getString(R.string.MaterialGramInputButtons),
-                        MaterialGramSettings.isMaterialInputEnabled(),
-                        false
-                );
-            } else if (position == colorHeaderRow) {
-                ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramColorHeader));
-            } else if (position == colorPickerRow) {
-                ((MaterialGramColorPickerCell) holder.itemView).setSelected(MaterialGramSettings.getAppColor());
-            } else if (position == colorInfoRow) {
-                ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramColorInfo));
-            } else if (position == voiceToggleRow) {
-                ((TextCheckCell) holder.itemView).setTextAndCheck(
-                        LocaleController.getString(R.string.MaterialGramVoiceStyle),
-                        MaterialGramSettings.isMaterialVoiceEnabled(),
-                        false
-                );
-            } else if (position == inputInfoRow) {
-                ((TextInfoPrivacyCell) holder.itemView).setText(LocaleController.getString(R.string.MaterialGramInputInfo));
+            final int id = rows.get(position);
+            switch (id) {
+                case ROW_CATEGORIES_HEADER: header(holder, R.string.MaterialGramCategories); break;
+                case ROW_LINKS_HEADER: header(holder, R.string.MaterialGramLinks); break;
+                case ROW_NAV_HEADER: header(holder, R.string.MaterialGramNavigationHeader); break;
+                case ROW_AVATAR_HEADER: header(holder, R.string.MaterialGramAvatarsHeader); break;
+                case ROW_COLOR_HEADER: header(holder, R.string.MaterialGramColorHeader); break;
+                case ROW_NAV_TOGGLE: toggle(holder, R.string.MaterialGramNavigationEnabled, MaterialGramSettings.isBottomNavigationEnabled()); break;
+                case ROW_INPUT_TOGGLE: toggle(holder, R.string.MaterialGramInputButtons, MaterialGramSettings.isMaterialInputEnabled()); break;
+                case ROW_VOICE_TOGGLE: toggle(holder, R.string.MaterialGramVoiceStyle, MaterialGramSettings.isMaterialVoiceEnabled()); break;
+                case ROW_PRIVACY_TOGGLE: toggle(holder, R.string.MaterialGramPrivacyToggle, MaterialGramSettings.isScreenshotModeEnabled()); break;
+                case ROW_NAV_INFO: info(holder, R.string.MaterialGramNavigationInfo); break;
+                case ROW_AVATAR_INFO: info(holder, R.string.MaterialGramAvatarsInfo); break;
+                case ROW_COLOR_INFO: info(holder, R.string.MaterialGramColorInfo); break;
+                case ROW_INPUT_INFO: info(holder, R.string.MaterialGramInputInfo); break;
+                case ROW_PRIVACY_INFO: info(holder, R.string.MaterialGramPrivacyInfo); break;
+                case ROW_AVATAR_SHAPES:
+                    ((MaterialGramShapePickerCell) holder.itemView).setSelected(MaterialGramSettings.getAvatarShape(), false);
+                    break;
+                case ROW_COLOR_PICKER:
+                    ((MaterialGramColorPickerCell) holder.itemView).setSelected(MaterialGramSettings.getAppColor());
+                    break;
+                case ROW_CAT_APPEARANCE:
+                    ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramCatAppearance), null, R.drawable.mg_icon_appearance, MaterialGramShapes.COOKIE, true, true);
+                    break;
+                case ROW_CAT_CHATS:
+                    ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramCatChats), null, R.drawable.mg_icon_chats, MaterialGramShapes.CLOVER, true, true);
+                    break;
+                case ROW_CAT_PRIVACY:
+                    ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramCatPrivacy), null, R.drawable.mg_icon_privacy, MaterialGramShapes.SUN, true, false);
+                    break;
+                case ROW_LINK_SOURCE:
+                    ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramSourceCode), "GitHub", R.drawable.mg_icon_source, MaterialGramShapes.COOKIE, false, false);
+                    break;
+                default:
+                    break;
             }
         }
 
         @Override
         public int getItemViewType(int position) {
-            if (position == navHeaderRow || position == avatarHeaderRow || position == inputHeaderRow || position == colorHeaderRow) {
-                return TYPE_HEADER;
-            } else if (position == navToggleRow || position == inputToggleRow || position == voiceToggleRow) {
-                return TYPE_TOGGLE;
-            } else if (position == colorPickerRow) {
-                return TYPE_COLORS;
-            } else if (position == avatarShapeRow) {
-                return TYPE_SHAPES;
+            final int id = rows.get(position);
+            switch (id) {
+                case ROW_HUB: return TYPE_HUB;
+                case ROW_CATEGORIES_HEADER:
+                case ROW_LINKS_HEADER:
+                case ROW_NAV_HEADER:
+                case ROW_AVATAR_HEADER:
+                case ROW_COLOR_HEADER:
+                    return TYPE_HEADER;
+                case ROW_NAV_TOGGLE:
+                case ROW_INPUT_TOGGLE:
+                case ROW_VOICE_TOGGLE:
+                case ROW_PRIVACY_TOGGLE:
+                    return TYPE_TOGGLE;
+                case ROW_AVATAR_SHAPES: return TYPE_SHAPES;
+                case ROW_COLOR_PICKER: return TYPE_COLORS;
+                case ROW_CAT_APPEARANCE:
+                case ROW_CAT_CHATS:
+                case ROW_CAT_PRIVACY:
+                case ROW_LINK_SOURCE:
+                    return TYPE_CATEGORY;
+                default: return TYPE_INFO;
             }
-            return TYPE_INFO;
         }
     }
 
@@ -1186,7 +1592,7 @@ public interface MainTabsActivityController {
         settings,
         "        items.add(UItem.asCustomShadow(topView, 200 - 12));\n",
         "        items.add(UItem.asCustomShadow(topView, 200 - 12));\n"
-        "        items.add(SettingCell.Factory.of(28, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_features, getString(R.string.MaterialGramSettings), getString(R.string.MaterialGramSettingsInfo)));\n"
+        "        items.add(SettingCell.Factory.of(28, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.mg_icon_main, getString(R.string.MaterialGramSettings), getString(R.string.MaterialGramSettingsInfo)));\n"
         "        items.add(UItem.asShadow(null));\n",
         "the top MaterialGram settings row"
     )
@@ -1706,6 +2112,15 @@ public interface MainTabsActivityController {
         ('MaterialGramAvatarsInfo', 'Форма применяется только на этом устройстве и не видна другим людям.'),
         ('MaterialGramInputHeader', 'Панель ввода'),
         ('MaterialGramInputButtons', 'Панель ввода Material You'),
+        ('MaterialGramCategories', 'Категории'),
+        ('MaterialGramLinks', 'Ссылки'),
+        ('MaterialGramCatAppearance', 'Внешний вид'),
+        ('MaterialGramCatChats', 'Чаты'),
+        ('MaterialGramCatPrivacy', 'Приватность'),
+        ('MaterialGramSourceCode', 'Исходный код'),
+        ('MaterialGramPrivacyHeader', 'Приватность'),
+        ('MaterialGramPrivacyToggle', 'Режим скриншотов'),
+        ('MaterialGramPrivacyInfo', 'Скрывает номер телефона и юзернейм на экранах настроек и профиля. Скрыто только на экране: копирование и ссылки работают как раньше.'),
         ('MaterialGramColorHeader', 'Цвет приложения'),
         ('MaterialGramColorBlue', 'Синий'),
         ('MaterialGramColorGreen', 'Зелёный'),
@@ -2052,6 +2467,54 @@ def patch_materialgram_voice() -> None:
     print("MaterialGram voice recording style was applied.")
 
 
+def patch_materialgram_privacy() -> None:
+    """Screenshot mode: mask the phone number and username on the settings and profile screens."""
+    ui = UPSTREAM / "TMessagesProj" / "src" / "main" / "java" / "org" / "telegram" / "ui"
+
+    settings_path = ui / "SettingsActivity.java"
+    settings = read_text(settings_path)
+    settings = replace_once(
+        settings,
+        'sb.append(PhoneFormat.getInstance().format("+" + user.phone));',
+        'sb.append(org.telegram.ui.MaterialGramPrivacy.phone(PhoneFormat.getInstance().format("+" + user.phone)));',
+        "the SettingsActivity phone"
+    )
+    settings = replace_once(
+        settings,
+        'sb.append(" • @").append(username);',
+        'sb.append(" • @").append(org.telegram.ui.MaterialGramPrivacy.username(username));',
+        "the SettingsActivity username"
+    )
+    write_text(settings_path, settings)
+
+    profile_path = ui / "ProfileActivity.java"
+    profile = read_text(profile_path)
+    for old, new, desc in (
+        ('text = PhoneFormat.getInstance().format("+" + vcardPhone);',
+         'text = org.telegram.ui.MaterialGramPrivacy.phone(PhoneFormat.getInstance().format("+" + vcardPhone));',
+         "the ProfileActivity vcard phone"),
+        ('text = PhoneFormat.getInstance().format("+" + user.phone);',
+         'text = org.telegram.ui.MaterialGramPrivacy.phone(PhoneFormat.getInstance().format("+" + user.phone));',
+         "the ProfileActivity phone row"),
+        ('value = PhoneFormat.getInstance().format("+" + user.phone);',
+         'value = org.telegram.ui.MaterialGramPrivacy.phone(PhoneFormat.getInstance().format("+" + user.phone));',
+         "the ProfileActivity phone value"),
+        ('new SpannableString("@" + usernameRaw)',
+         'new SpannableString("@" + org.telegram.ui.MaterialGramPrivacy.username(usernameRaw))',
+         "the ProfileActivity extra usernames"),
+    ):
+        profile = replace_once(profile, old, new, desc)
+    profile, count = re.subn(
+        r'(?m)^(\s+)text = "@" \+ username;$',
+        r'\1text = "@" + org.telegram.ui.MaterialGramPrivacy.username(username);',
+        profile
+    )
+    if count < 2:
+        fail(f"Could not safely patch the ProfileActivity username rows: found {count}.")
+    write_text(profile_path, profile)
+    print(f"MaterialGram screenshot mode was applied ({count} username rows).")
+
+
 def main() -> None:
     if not UPSTREAM.is_dir():
         fail("Telegram submodule is not checked out. Use actions/checkout with submodules: recursive.")
@@ -2191,6 +2654,7 @@ def main() -> None:
     patch_materialgram_input()
     patch_materialgram_split_input()
     patch_materialgram_voice()
+    patch_materialgram_privacy()
 
     print("MaterialGram branding and package ID applied.")
     print("Telegram API credentials injected into the temporary build checkout (values hidden).")
