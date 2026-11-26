@@ -1323,7 +1323,6 @@ public class MaterialGramSettingsActivity extends BaseFragment {
             rows.add(ROW_PRIVACY_TOGGLE);
             rows.add(ROW_PRIVACY_INFO);
         } else {
-            rows.add(ROW_HUB);
             rows.add(ROW_CATEGORIES_HEADER);
             rows.add(ROW_CAT_APPEARANCE);
             rows.add(ROW_CAT_CHATS);
@@ -1395,7 +1394,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         } else if (id == ROW_CAT_PRIVACY) {
             presentFragment(new MaterialGramSettingsActivity(PAGE_PRIVACY));
         } else if (id == ROW_LINK_SOURCE) {
-            Browser.openUrl(getParentActivity(), "https://github.com/v0idty/MaterialGram");
+            Browser.openUrl(getParentActivity(), "https://t.me/MaterialGramm");
         } else if (id == ROW_NAV_TOGGLE) {
             MaterialGramSettings.setBottomNavigationEnabled(!MaterialGramSettings.isBottomNavigationEnabled());
             adapter.notifyItemChanged(position);
@@ -1409,6 +1408,9 @@ public class MaterialGramSettingsActivity extends BaseFragment {
         } else if (id == ROW_PRIVACY_TOGGLE) {
             MaterialGramSettings.setScreenshotModeEnabled(!MaterialGramSettings.isScreenshotModeEnabled());
             adapter.notifyItemChanged(position);
+            NotificationCenter.getInstance(currentAccount).postNotificationName(
+                    NotificationCenter.updateInterfaces,
+                    MessagesController.UPDATE_MASK_NAME | MessagesController.UPDATE_MASK_PHONE);
         }
     }
 
@@ -1533,7 +1535,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
                     ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramCatPrivacy), null, R.drawable.mg_icon_privacy, MaterialGramShapes.SUN, true, false);
                     break;
                 case ROW_LINK_SOURCE:
-                    ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramSourceCode), "GitHub", R.drawable.mg_icon_source, MaterialGramShapes.COOKIE, false, false);
+                    ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramChannel), "@MaterialGramm", R.drawable.mg_icon_main, MaterialGramShapes.COOKIE, false, false);
                     break;
                 default:
                     break;
@@ -2121,7 +2123,7 @@ public interface MainTabsActivityController {
         ('MaterialGramCatAppearance', 'Внешний вид'),
         ('MaterialGramCatChats', 'Чаты'),
         ('MaterialGramCatPrivacy', 'Приватность'),
-        ('MaterialGramSourceCode', 'Исходный код'),
+        ('MaterialGramChannel', 'Официальный канал'),
         ('MaterialGramPrivacyHeader', 'Приватность'),
         ('MaterialGramPrivacyToggle', 'Режим скриншотов'),
         ('MaterialGramPrivacyInfo', 'Скрывает номер телефона и юзернейм на экранах настроек и профиля. Скрыто только на экране: копирование и ссылки работают как раньше.'),
