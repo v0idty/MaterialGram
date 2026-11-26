@@ -1049,7 +1049,26 @@ public class MaterialGramCategoryCell extends FrameLayout {
 
     public void set(String title, String value, int iconRes, int shape, boolean chevron, boolean divider) {
         titleView.setText(title);
-        valueView.setText(value == null ? "" : value);
+        final boolean hasValue = value != null && !value.isEmpty();
+        valueView.setText(hasValue ? value : "");
+        final FrameLayout.LayoutParams titleParams = (FrameLayout.LayoutParams) titleView.getLayoutParams();
+        final FrameLayout.LayoutParams valueParams = (FrameLayout.LayoutParams) valueView.getLayoutParams();
+        if (hasValue) {
+            titleParams.gravity = Gravity.LEFT | Gravity.TOP;
+            titleParams.topMargin = dp(11);
+            titleParams.rightMargin = dp(50);
+            valueParams.gravity = Gravity.LEFT | Gravity.TOP;
+            valueParams.leftMargin = dp(78);
+            valueParams.topMargin = dp(36);
+            valueParams.rightMargin = dp(50);
+            valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        } else {
+            titleParams.gravity = Gravity.LEFT | Gravity.CENTER_VERTICAL;
+            titleParams.topMargin = 0;
+            titleParams.rightMargin = dp(50);
+        }
+        titleView.setLayoutParams(titleParams);
+        valueView.setLayoutParams(valueParams);
         this.divider = divider;
         this.chevron = chevron;
         badge.set(iconRes, shape);
@@ -1535,7 +1554,7 @@ public class MaterialGramSettingsActivity extends BaseFragment {
                     ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramCatPrivacy), null, R.drawable.mg_icon_privacy, MaterialGramShapes.SUN, true, false);
                     break;
                 case ROW_LINK_SOURCE:
-                    ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramChannel), "@MaterialGramm", R.drawable.mg_icon_main, MaterialGramShapes.COOKIE, false, false);
+                    ((MaterialGramCategoryCell) holder.itemView).set(LocaleController.getString(R.string.MaterialGramChannel), "@MaterialGramm", R.drawable.mg_icon_main, MaterialGramShapes.COOKIE, true, false);
                     break;
                 default:
                     break;
@@ -2484,6 +2503,12 @@ def patch_materialgram_privacy() -> None:
         'sb.append(PhoneFormat.getInstance().format("+" + user.phone));',
         'sb.append(org.telegram.ui.MaterialGramPrivacy.phone(PhoneFormat.getInstance().format("+" + user.phone)));',
         "the SettingsActivity phone"
+    )
+    settings = replace_once(
+        settings,
+        "subtitleView.setText(sb);",
+        "subtitleView.setText(org.telegram.ui.MaterialGramSettings.isScreenshotModeEnabled() ? (CharSequence) \"\" : (CharSequence) sb);",
+        "the SettingsActivity subtitle"
     )
     settings = replace_once(
         settings,
