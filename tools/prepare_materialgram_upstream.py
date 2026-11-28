@@ -997,7 +997,8 @@ public class MaterialGramShapePickerCell extends FrameLayout {
 }
 """)
 
-    # MaterialGram settings: a hub with categories (like exteraGram) and one page per category.    write_text(ui_root / "MaterialGramCategoryCell.java", """package org.telegram.ui;
+    # MaterialGram settings: a hub with categories (like exteraGram) and one page per category.
+    write_text(ui_root / "MaterialGramCategoryCell.java", """package org.telegram.ui;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 
@@ -1996,7 +1997,8 @@ public interface MainTabsActivityController {
             }
         }
     }
-''',        '''                materialGramSetCollapsed(collapsed);
+''',
+        '''                materialGramSetCollapsed(collapsed);
             }
         }
 
