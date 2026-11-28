@@ -997,8 +997,7 @@ public class MaterialGramShapePickerCell extends FrameLayout {
 }
 """)
 
-    # MaterialGram settings: a hub with categories (like exteraGram) and one page per category.
-    write_text(ui_root / "MaterialGramCategoryCell.java", """package org.telegram.ui;
+    # MaterialGram settings: a hub with categories (like exteraGram) and one page per category.    write_text(ui_root / "MaterialGramCategoryCell.java", """package org.telegram.ui;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 
@@ -1997,8 +1996,7 @@ public interface MainTabsActivityController {
             }
         }
     }
-''',
-        '''                materialGramSetCollapsed(collapsed);
+''',        '''                materialGramSetCollapsed(collapsed);
             }
         }
 
@@ -2578,6 +2576,46 @@ def patch_materialgram_tabs_layout() -> None:
         "        } else if (totalWidth < minTotalWidthForTabs) {",
         "        } else if (!materialGramCollapsed && totalWidth < minTotalWidthForTabs) {",
         "the minimum tabs width"
+    )
+    # The capsule width glides to its new size instead of snapping (collapse on scroll, calls tab, etc.).
+    layout = replace_once(
+        layout,
+        "    private boolean materialGramCollapsed;\n",
+        "    private boolean materialGramCollapsed;\n"
+        "    private float materialGramWidth = -1f;\n"
+        "    private int materialGramTargetWidth = -1;\n"
+        "    private android.animation.ValueAnimator materialGramWidthAnimator;\n"
+        "\n"
+        "    private int materialGramAnimatedWidth(int target) {\n"
+        "        if (materialGramWidth < 0f || !isAttachedToWindow()) {\n"
+        "            materialGramWidth = target;\n"
+        "            materialGramTargetWidth = target;\n"
+        "            return target;\n"
+        "        }\n"
+        "        if (target != materialGramTargetWidth) {\n"
+        "            materialGramTargetWidth = target;\n"
+        "            if (materialGramWidthAnimator != null) {\n"
+        "                materialGramWidthAnimator.cancel();\n"
+        "            }\n"
+        "            final android.animation.ValueAnimator animator = android.animation.ValueAnimator.ofFloat(materialGramWidth, target);\n"
+        "            animator.setDuration(300);\n"
+        "            animator.setInterpolator(org.telegram.ui.Components.CubicBezierInterpolator.EASE_OUT_QUINT);\n"
+        "            animator.addUpdateListener(a -> {\n"
+        "                materialGramWidth = (float) a.getAnimatedValue();\n"
+        "                requestLayout();\n"
+        "            });\n"
+        "            materialGramWidthAnimator = animator;\n"
+        "            animator.start();\n"
+        "        }\n"
+        "        return Math.round(materialGramWidth);\n"
+        "    }\n",
+        "the MaterialGram animated width"
+    )
+    layout = replace_once(
+        layout,
+        "        setMeasuredDimension(l + getPaddingLeft() + getPaddingRight(), height);",
+        "        setMeasuredDimension(materialGramAnimatedWidth(l + getPaddingLeft() + getPaddingRight()), height);",
+        "the tabs measured width"
     )
     write_text(layout_path, layout)
     print("MaterialGram tabs layout was patched.")
